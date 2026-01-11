@@ -1,3 +1,4 @@
+import base64
 import datetime
 import math
 import os
@@ -89,7 +90,7 @@ def get_resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
-def process_green_lines(img, original_img=None, source_name="image"):
+def process_green_lines(img, original_img=None):
     """Core logic for detecting green lines and cropping based on them."""
     height, width, channels = img.shape
     img_small = cv2.resize(img, (0, 0), fx=0.1, fy=0.1)
@@ -111,7 +112,7 @@ def process_green_lines(img, original_img=None, source_name="image"):
     )
 
     if linesP is None or len(linesP) < 2:
-        print(f"No green strings detected in {source_name}.")
+        print("No green strings detected.")
         return None, None
 
     # Sort lines by length
@@ -133,9 +134,7 @@ def process_green_lines(img, original_img=None, source_name="image"):
                 mask = np.zeros(img_small.shape[:2], dtype="uint8")
                 drawLine(mask, *line, 255)
                 drawLine(mask, x1, y1, x2, y2, 255)
-                print(
-                    f"Detected green strings in {source_name}. Detected angle: {angle}"
-                )
+                print(f"Detected green strings. Detected angle: {angle}")
                 mask = cv2.bitwise_not(mask)
                 contours, _ = cv2.findContours(
                     mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
@@ -155,7 +154,7 @@ def process_green_lines(img, original_img=None, source_name="image"):
                 result = cv2.bitwise_and(original_img or img, final_mask)
                 return result, final_mask
 
-    print(f"No green strings detected in {source_name}.")
+    print("No green strings detected.")
     return None, None
 
 
@@ -181,21 +180,31 @@ def process_dng(file_path):
         return None
 
 
-def crop_green_lines(initial_img_path):
+def crop_green_lines(base64_str):
     """Detect green lines from file."""
-    initial_img = cv2.imread(initial_img_path)
+    # If the base64 string includes a prefix like "data:image/png;base64,", remove it:
+    if base64_str.startswith("data:image"):
+        base64_str = base64_str.split(",")[1]
+
+    # Decode the base64 string into bytes
+    image_bytes = base64.b64decode(base64_str)
+
+    # Convert bytes to a NumPy array
+    nparr = np.frombuffer(image_bytes, np.uint8)
+
+    # Decode the image (similar to cv2.imread)`
+    initial_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if initial_img is None:
-        raise ValueError(f"Could not read image at path: {initial_img_path}")
+        raise ValueError("Could not read image")
     return process_green_lines(
         initial_img,
         original_img=initial_img,
-        source_name=os.path.basename(initial_img_path),
     )
 
 
 def crop_green_lines_from_array(img):
     """Detect green lines from numpy array image."""
-    return process_green_lines(img, source_name="array input")
+    return process_green_lines(img)
 
 
 class VarroaDetector:
@@ -269,8 +278,8 @@ class VarroaDetector:
                 temp = float(20)
             elif date.month >= 8 or date.month < 11:
                 temp = float(15)
-        # if date.month == 12 or date.month < 5:
-        #     return "don't treat for now"
+        if date.month == 12 or date.month < 5:
+            return "don't treat for now"
         if honey_supers_on:
             if temp >= 10 and temp <= 26:
                 return "formic acid"
@@ -295,8 +304,9 @@ class VarroaDetector:
                 else:
                     return "don't treat for now"
 
-    def select_folder(self, temperature=None):
-        self.temperature = float(temperature)
+    def select_folder(self, temperature=None, image=None):
+        self.temperature = float(temperature) if temperature else None
+        self.uploadedImage = image
         # self.save_button.configure(state="disabled")
         # self.apply_all_button.configure(state="disabled")
         try:
@@ -364,10 +374,8 @@ class VarroaDetector:
 
             curr_date = datetime.datetime.now()
             # TODO: update condition to consider other months too
-            if (
-                (curr_date.month == 12)
-                or (self.mite_count >= 9 and curr_date.month == 5)
-                or (self.mite_count >= 12 and curr_date.month == 8)
+            if (self.mite_count >= 9 and curr_date.month == 5) or (
+                self.mite_count >= 12 and curr_date.month == 8
             ):
                 treatment_recommendation = self.determine_treatment(curr_date)
                 return {
@@ -456,7 +464,8 @@ class VarroaDetector:
             binary_mask = None
 
             # Handle DNG files
-            if input_path.lower().endswith(".dng"):
+            # if input_path.lower().endswith(".dng"):
+            if False:
                 img = process_dng(input_path)
                 if img is None:
                     print(f"Failed to process DNG file: {rel_path}")
@@ -472,7 +481,7 @@ class VarroaDetector:
                 # For JPGs, copy the original to be the base image
                 shutil.copyfile(input_path, base_output_path)
                 # Now, try to crop it from the original path
-                crop_img, binary_mask = crop_green_lines(input_path)
+                crop_img, binary_mask = crop_green_lines(self.uploadedImage)
                 if crop_img is not None:
                     cv2.imwrite(glined_output_path, crop_img)
             # Save the binary mask if it was successfully generated
@@ -572,7 +581,7 @@ class VarroaDetector:
                         # Get full path but store relative path for later use
                         full_path = os.path.join(root, f)
                         rel_path = os.path.relpath(full_path, self.output_path)
-                        file_images.append((full_path, rel_path))
+                        ome.append((full_path, rel_path))
 
             print("\n**********************************")
             print("STEP 2: Performing inference")

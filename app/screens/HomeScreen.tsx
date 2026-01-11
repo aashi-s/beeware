@@ -1,4 +1,6 @@
 import React, { useRef, useState } from "react";
+import { readFile } from "react-native-fs";
+
 import {
   Button,
   PermissionsAndroid,
@@ -6,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { launchImageLibrary } from "react-native-image-picker";
 
 import { useQuery, useRealm } from "@realm/react";
 import { LogBox } from "react-native";
@@ -223,7 +226,30 @@ function HomeScreen() {
       });
   }
 
+  const [capturedImageURI, setCapturedImageURI] = useState("");
+
+  const loadImageBase64 = async (capturedImageURI: string) => {
+    try {
+      const base64Data = await readFile(capturedImageURI, "base64");
+      return "data:image/jpeg;base64," + base64Data;
+    } catch (error) {
+      console.error("Error converting image to base64:", error);
+    }
+  };
+  const handleUploadImage = async () => {
+    const result = await launchImageLibrary({ mediaType: "photo" });
+    if (result.didCancel) {
+      console.log("User cancelled image picker");
+    } else if (result.errorCode) {
+      console.log(result.errorMessage);
+    } else {
+      const source = result.assets![0]; //Unwrap the result assets and grab the first item (the captured image)
+      setCapturedImageURI(source.uri!);
+    }
+  };
+
   const handleStartAnalysis = async (temperature: string) => {
+    const base64Image = await loadImageBase64(capturedImageURI);
     try {
       setIsAnalyzing(true);
       const response = await fetch(`${backendUrl}/temperature`, {
@@ -232,7 +258,8 @@ function HomeScreen() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          temperature: temperature,
+          temperature: temperature == "" ? null : temperature,
+          image: base64Image,
         }),
       });
       if (response.ok) {
@@ -407,11 +434,28 @@ function HomeScreen() {
               onPress={() => {
                 handleStartAnalysis(temperature);
               }}
-              disabled={false}
+              disabled={temperature == "" ? true : false}
             />
           ) : (
             <Button title="Analyzing" disabled={false} />
           )}
+        </TouchableOpacity>
+      </View>
+
+      {/* Upload Image Button */}
+      <View
+        style={{
+          justifyContent: "space-around",
+          alignItems: "flex-start",
+          flexDirection: "row",
+        }}
+      >
+        <TouchableOpacity style={{ width: 120 }}>
+          <Button
+            title="Upload Image"
+            disabled={false}
+            onPress={() => handleUploadImage()}
+          />
         </TouchableOpacity>
       </View>
 

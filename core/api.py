@@ -46,7 +46,8 @@ class Config(BaseModel):
 
 
 class RequestBody(BaseModel):
-    temperature: str
+    temperature: str | None
+    image: str
 
 
 @app.get("/")
@@ -59,5 +60,6 @@ async def chat(
     query: RequestBody = Body(...),
 ):
     print("temperature: ", query.temperature)
+    print("image: ", query.image)
 
-    return varroa_detector.select_folder(query.temperature)
+    return varroa_detector.select_folder(query.temperature, query.image)
