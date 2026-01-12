@@ -1,24 +1,44 @@
-import React, { useRef, useState } from "react";
-import { readFile } from "react-native-fs";
-
+import { useQuery, useRealm } from "@realm/react";
+import Constants from "expo-constants";
+import Device from "expo-device";
+import * as Notifications from "expo-notifications";
+import React, { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Button,
+  Linking,
+  LogBox,
   PermissionsAndroid,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
-import { launchImageLibrary } from "react-native-image-picker";
-
-import { useQuery, useRealm } from "@realm/react";
-import { LogBox } from "react-native";
 import base64 from "react-native-base64";
-import { BleManager, Device } from "react-native-ble-plx";
+import { Device as BLEDevice, BleManager } from "react-native-ble-plx";
+import { readFile } from "react-native-fs";
+import { launchImageLibrary } from "react-native-image-picker";
 import { Task } from "../schemas/Task";
 
 LogBox.ignoreLogs(["new NativeEventEmitter"]); // Ignore log notification by message
 LogBox.ignoreAllLogs(); //Ignore all log notifications
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: false,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
 function HomeScreen() {
+  const [expoPushToken, setExpoPushToken] = useState("");
+  const [channels, setChannels] = useState<Notifications.NotificationChannel[]>(
+    []
+  );
+  const [notification, setNotification] = useState<
+    Notifications.Notification | undefined
+  >(undefined);
   const tasks = useQuery(Task);
   const descriptionRef = useRef("");
   const realm = useRealm();
@@ -44,13 +64,98 @@ function HomeScreen() {
   const [infestation, setInfestation] = useState(null);
 
   //What device is connected?
-  const [connectedDevice, setConnectedDevice] = useState<Device>();
+  const [connectedDevice, setConnectedDevice] = useState<BLEDevice>();
 
   const [temperature, setTemperature] = useState("");
   // const [treatment, setTreatment] = useState(false);
   const [treatmentOnMicrocontroller, setTreatmentOnMicrocontroller] = useState<
     string | null
   >(null);
+
+  async function registerForPushNotificationsAsync() {
+    let token;
+    // we're only running this app on android phones, but this notification channel is only for android
+    await Notifications.setNotificationChannelAsync(
+      "miteDetectionNotificationChannel",
+      {
+        name: "BeeWare Channel",
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [250, 0, 250, 0],
+      }
+    );
+    if (Device.isDevice) {
+      const { status: existingStatus } =
+        await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      // Ensure finalStatus has permission granted before proceeding
+      if (existingStatus !== "granted") {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      if (finalStatus !== "granted") {
+        alert("Failed to get push token for push notification");
+        return;
+      }
+
+      try {
+        const projectId =
+          Constants?.expoConfig?.extra?.eas?.projectId ??
+          Constants?.easConfig?.projectId;
+        if (!projectId) {
+          throw new Error("Project ID not found");
+        }
+        token = (
+          await Notifications.getExpoPushTokenAsync({
+            projectId,
+          })
+        ).data;
+        console.log("token is", token);
+      } catch (e) {
+        token = `${e}`;
+      }
+    } else {
+      alert("Must use physical device");
+    }
+    return token;
+  }
+
+  useEffect(() => {
+    registerForPushNotificationsAsync().then(
+      (token) => token && setExpoPushToken(token)
+    );
+    Notifications.getNotificationChannelsAsync().then((value) =>
+      setChannels(value ?? [])
+    );
+    const notificationListener = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        setNotification(notification);
+      }
+    );
+    const responseListener =
+      Notifications.addNotificationResponseReceivedListener((response) => {
+        console.log(response);
+      });
+    return () => {
+      notificationListener.remove();
+      responseListener.remove();
+    };
+  }, []);
+
+  async function schedulePushNotification() {
+    // update this to be 3 months from now
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: "Test notification",
+        body: "123",
+        data: { data: "data", test: { test1: "more data" } },
+      },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+        seconds: 30,
+        // seconds: 3 * 30 * 24 * 60 * 60,
+      },
+    });
+  }
 
   // doesnt seem to be used
   // useEffect(() => {
@@ -74,13 +179,28 @@ function HomeScreen() {
   //   return () => sub.remove();
   // }, [connectedDevice]);
 
+  async function openAppNotificationSettings() {
+    await Linking.openSettings();
+  }
+
   // Scans availbale BLT Devices and then call connectDevice
   async function scanDevices() {
     PermissionsAndroid.requestMultiple([
       PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
       PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
       PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-    ]).then((answere) => {
+      PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+    ]).then((answer) => {
+      if (answer["android.permission.POST_NOTIFICATIONS"] == "denied") {
+        Alert.alert(
+          "Notifications Disabled",
+          "Please enable notifications in Settings",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Open Settings", onPress: openAppNotificationSettings },
+          ]
+        );
+      }
       console.log("scanning");
 
       BLTManager.startDeviceScan(null, null, (error, scannedDevice) => {
@@ -145,7 +265,7 @@ function HomeScreen() {
     });
   }
   //Connect the device and start monitoring characteristics
-  async function connectDevice(device: Device) {
+  async function connectDevice(device: BLEDevice) {
     console.log("connecting to Device:", device.name);
 
     device
