@@ -15,7 +15,8 @@ import base64 from "react-native-base64";
 import { Device as BLEDevice, BleManager } from "react-native-ble-plx";
 import { readFile } from "react-native-fs";
 import { launchImageLibrary } from "react-native-image-picker";
-import { storage } from "../../index";
+import uuid from "react-native-uuid";
+import { notificationStorage, userStorage } from "../../index";
 
 LogBox.ignoreLogs(["new NativeEventEmitter"]); // Ignore log notification by message
 LogBox.ignoreAllLogs(); //Ignore all log notifications
@@ -28,15 +29,36 @@ Notifications.setNotificationHandler({
     shouldSetBadge: false,
   }),
 });
-
+type ApprovalType = "pending" | "approved" | "declined";
+type ApplicationType = "pending" | "success" | "error" | "null";
 function HomeScreen() {
   const [expoPushToken, setExpoPushToken] = useState("");
+  const [sessionDetails, setSessionDetails] = useState<{
+    userInputs?: string;
+    miteCount?: number;
+    infestation?: boolean;
+    temperature?: string;
+    treatment?: string;
+    approval?: ApprovalType;
+    delay?: boolean;
+    applied?: ApplicationType;
+  }>({
+    userInputs: undefined,
+    miteCount: undefined,
+    infestation: undefined,
+    temperature: undefined,
+    treatment: undefined,
+    approval: undefined,
+    delay: undefined,
+    applied: undefined,
+  });
   const [channels, setChannels] = useState<Notifications.NotificationChannel[]>(
     []
   );
   const [notification, setNotification] = useState<
     Notifications.Notification | undefined
   >(undefined);
+  const [sessionId, setSessionId] = useState(""); // does it need to be kept in state
   const descriptionRef = useRef("");
 
   const backendUrl = "http://10.10.101.47:8000";
@@ -54,10 +76,12 @@ function HomeScreen() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   //Treatment value returned
-  const [treatment, setTreatment] = useState(null);
+  const [treatment, setTreatment] = useState<string>("");
 
   //Infestation boolean value returned
-  const [infestation, setInfestation] = useState(null);
+  const [infestation, setInfestation] = useState<boolean | undefined>(
+    undefined
+  );
 
   //What device is connected?
   const [connectedDevice, setConnectedDevice] = useState<BLEDevice>();
@@ -135,19 +159,38 @@ function HomeScreen() {
     };
   }, []);
 
-  async function schedulePushNotification() {
+  async function schedulePushNotification(seconds?: number) {
     // update this to be 3 months from now
+    const content = {
+      title: "Test notification",
+      body: "123",
+      data: { data: "data", test: { test1: "more data" } },
+    };
+    const delay = 3 * 30 * 24 * 60 * 60;
+    const sendDate = new Date();
+    sendDate.setSeconds(sendDate.getSeconds() + delay);
+
     await Notifications.scheduleNotificationAsync({
-      content: {
-        title: "Test notification",
-        body: "123",
-        data: { data: "data", test: { test1: "more data" } },
-      },
+      content,
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: 30,
-        // seconds: 3 * 30 * 24 * 60 * 60,
+        seconds: seconds || 30,
+        // seconds: delay,
       },
+    }).then((res) => {
+      console.log("notification scheduled response: ", res); // see what this is
+      const notificationId = uuid.v4();
+      const notificationDetails = {
+        sessionId: sessionId,
+        status: "scheduled",
+        sendDate: sendDate.toISOString(),
+        title: content.title,
+        body: content.body,
+      };
+      notificationStorage.set(
+        notificationId,
+        JSON.stringify(notificationDetails)
+      );
     });
   }
 
@@ -359,7 +402,6 @@ function HomeScreen() {
     } else {
       const source = result.assets![0]; //Unwrap the result assets and grab the first item (the captured image)
       setCapturedImageURI(source.uri!);
-      storage;
     }
   };
 
@@ -381,13 +423,36 @@ function HomeScreen() {
         // Parse the response body as JSON
         const jsonResponse = await response.json();
         // Extract the actual response content
-        const responseData = jsonResponse; // Adjust this according to the structure of your response
+        const responseData: {
+          mite_count: number;
+          infestation: boolean;
+          treatment_recommendation: string;
+          delay: boolean;
+        } = jsonResponse; // Adjust this according to the structure of your response
 
         // Now you can work with the actual response data
         console.log(responseData);
+        const sessionUpdate = {
+          ...sessionDetails,
+          miteCount: responseData["mite_count"],
+          infestation: responseData["infestation"],
+          temperature: temperature,
+          treatment: responseData["treatment_recommendation"],
+          approval: "pending" as ApprovalType,
+          delay: responseData["delay"], // verify that the boolean works here
+          applied: "pending" as ApplicationType,
+        };
+        setSessionDetails(sessionUpdate);
+        const currSession = uuid.v4();
+        setSessionId(currSession);
+        userStorage.set(currSession, JSON.stringify(sessionUpdate));
         setTreatment(responseData["treatment_recommendation"]);
-        setInfestation(responseData["infestation"]);
+        setInfestation(responseData["infestation"]); // also check if boolean works here
         sendTreatment(responseData["treatment_recommendation"]);
+        // if infestation is false, also schedule a notification 3 months from now
+        if (!responseData["infestation"]) {
+          await schedulePushNotification(7.884 * 10 ** 6); // 3 months from now
+        }
       } else {
         // Handle error response
         console.error("Error:", response.statusText);
@@ -490,9 +555,11 @@ function HomeScreen() {
             fontFamily: "Cochin",
           }}
         >
-          {infestation == null
-            ? "Run analysis to see if your hive is infested"
-            : "Infestation " + infestation}
+          {infestation == true
+            ? "Your hive is infested, see our recommendation"
+            : infestation == false
+            ? "Come back in 3 months, we'll send you a notification"
+            : "Run analysis to see if your hive is infested"}
         </Text>
       </View>
 
@@ -564,6 +631,11 @@ function HomeScreen() {
             onPress={async () => {
               await schedulePushNotification();
             }}
+          />
+          <Button
+            title="Approve recommended treatment"
+            onPress={() => {}}
+            disabled={sessionDetails.approval != "pending"}
           />
         </TouchableOpacity>
       </View>

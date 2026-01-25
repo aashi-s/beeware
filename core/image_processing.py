@@ -381,10 +381,17 @@ class VarroaDetector:
                 return {
                     "infestation": True,
                     "treatment_recommendation": treatment_recommendation,
+                    "mite_count": self.mite_count,
+                    "delay": False,
                 }
             else:
                 # frontend handles showing something about coming back in 3-4 months
-                return {"infestation": False, "treatment_recommendation": "None"}
+                return {
+                    "infestation": False,
+                    "treatment_recommendation": "None",
+                    "mite_count": self.mite_count,
+                    "delay": False,
+                }
 
             # Enable the listbox after processing is complete
             # self.image_listbox.configure(state="normal")
@@ -581,7 +588,7 @@ class VarroaDetector:
                         # Get full path but store relative path for later use
                         full_path = os.path.join(root, f)
                         rel_path = os.path.relpath(full_path, self.output_path)
-                        ome.append((full_path, rel_path))
+                        file_images.append((full_path, rel_path))
 
             print("\n**********************************")
             print("STEP 2: Performing inference")
