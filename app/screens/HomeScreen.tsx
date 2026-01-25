@@ -1,4 +1,3 @@
-import { useQuery, useRealm } from "@realm/react";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import React, { useEffect, useRef, useState } from "react";
@@ -16,7 +15,7 @@ import base64 from "react-native-base64";
 import { Device as BLEDevice, BleManager } from "react-native-ble-plx";
 import { readFile } from "react-native-fs";
 import { launchImageLibrary } from "react-native-image-picker";
-import { Task } from "../schemas/Task";
+import { storage } from "../../index";
 
 LogBox.ignoreLogs(["new NativeEventEmitter"]); // Ignore log notification by message
 LogBox.ignoreAllLogs(); //Ignore all log notifications
@@ -38,9 +37,7 @@ function HomeScreen() {
   const [notification, setNotification] = useState<
     Notifications.Notification | undefined
   >(undefined);
-  const tasks = useQuery(Task);
   const descriptionRef = useRef("");
-  const realm = useRealm();
 
   const backendUrl = "http://10.10.101.47:8000";
   const BLTManager = new BleManager();
@@ -362,6 +359,7 @@ function HomeScreen() {
     } else {
       const source = result.assets![0]; //Unwrap the result assets and grab the first item (the captured image)
       setCapturedImageURI(source.uri!);
+      storage;
     }
   };
 
@@ -400,18 +398,6 @@ function HomeScreen() {
       setIsAnalyzing(false);
     }
   };
-
-  // const createNewTask = () => {
-  //   realm.write(() => {
-  //     const newTask = new Task(realm, descriptionRef.current);
-
-  //     // clear input field
-  //     descriptionRef.current = "";
-
-  //     // return task
-  //     return newTask;
-  //   });
-  // };
 
   return (
     <View>
