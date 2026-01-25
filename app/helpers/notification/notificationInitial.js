@@ -1,9 +1,3 @@
-import {
-  cancelAllNotifications,
-  createChennel,
-  displayNotification,
-  setBadgeCount,
-} from "@notifee/react-native";
 export const removeBadgeCount = async () => {
   await setBadgeCount(0);
   await cancelAllNotifications();
