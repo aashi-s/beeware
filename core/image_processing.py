@@ -1,5 +1,6 @@
 import base64
 import datetime
+import io
 import math
 import os
 import shutil
@@ -9,6 +10,7 @@ import threading
 import cv2
 import numpy as np
 import rawpy
+from PIL import Image
 from scipy.spatial.distance import euclidean
 from ultralytics import YOLO
 
@@ -215,31 +217,14 @@ class VarroaDetector:
         self.current_image = None
         self.current_boxes = {}  # Store boxes for each image
         self.boxes_green_lines = {}  # Store boxes for each image for green lines
-        self.mite_count = 0
-
-        # Set default font
-        # self.default_font = ("Inter", 13)
-        # self.header_font = ("Inter", 16, "bold")
+        self.mite_count = 0  # Keep track of mites detected in image
 
         # Initialize model
         self.model_path = get_resource_path("model/weights/best.pt")
         self.model = YOLO(self.model_path, verbose=False)
-        self.current_folder = None
+        self.current_folder = None  # TODO: remove references to this once testing is done, nothing needs to be saved locally to PC
         self.output_path = None
         self.image_to_analyze = None
-
-        # Setup UI elements
-        # self.setup_ui()
-
-        # Bind cleanup to window closing
-        # self.root.protocol("WM_DELETE_WINDOW", self.cleanup)
-
-        # Maximize window
-        # self.root.update()
-        # if platform.system() == "Linux":
-        # self.root.geometry("1200x800")
-        # else:
-        # self.root.state("zoomed")
 
     def get_all_images(self, folder):
         """Recursively get all JPG and DNG files from folder and subfolders"""
@@ -279,18 +264,18 @@ class VarroaDetector:
             elif date.month >= 8 or date.month < 11:
                 temp = float(15)
         if date.month == 12 or date.month < 5:
-            return "don't treat for now"
+            return "null"
         if honey_supers_on:
             if temp >= 10 and temp <= 26:
                 return "formic acid"
             else:
-                return "don't treat for now"
+                return "null"
         else:
             if hive_broodless:
                 if temp > 4.4:
                     return "oxalic acid"
                 else:
-                    return "don't treat for now"
+                    return "null"
             else:
                 if temp > 26 and temp <= 30:
                     return "thymol"
@@ -302,77 +287,48 @@ class VarroaDetector:
                 elif temp >= 10 and temp <= 15:
                     return "formic acid"
                 else:
-                    return "don't treat for now"
+                    return "null"
 
-    def select_folder(self, temperature=None, image=None):
+    def select_folder(self, temperature=None, image=None, overrideTreatment=None):
         self.temperature = float(temperature) if temperature else None
+        if overrideTreatment:
+            self.temperature = float(20)
         self.uploadedImage = image
-        # self.save_button.configure(state="disabled")
-        # self.apply_all_button.configure(state="disabled")
         try:
-            # # Clear the image listbox and disable it
-            # self.image_listbox.configure(state="normal")  # Enable temporarily to clear
-            # self.image_listbox.delete(0, tk.END)
-            # self.image_listbox.configure(state="disabled")  # Disable again
-
-            # # Reuse the cleanup method to remove processed_images folder
-            # self.cleanup(exit_program=False)
-
             # Reset current image and boxes
             self.current_image = None
             self.current_boxes = {}
             self.green_line_enabled = {}
             self.image_confidence_thresholds = {}
             self.boxes_green_lines = {}
-            # self.image_listbox.fullnames = {}
-
-            # Update statistics to show zero counts
-            # self.update_box_statistics()
-
-            # Clear the image viewer completely
-            # if hasattr(self, "image_viewer"):
-            #     self.image_viewer.canvas.delete("all")
-            #     # Reset the original_image attribute to None
-            #     self.image_viewer.original_image = None
-            #     # Reset tile cache
-            #     self.image_viewer.tile_cache.clear()
-            #     # Reset all other relevant image viewer properties
-            #     self.image_viewer.image_path = None
-            #     self.image_viewer.all_boxes = []
-            #     # Reset ROI polygons
-            #     self.image_viewer.roi_polygons = {}
 
             # Get the new folder
-            # self.current_folder = filedialog.askdirectory() #TODO: update to work with mobile file selection, done on frontend tho
             self.current_folder = (
                 "C:/Users/Aashi/Documents/GitHub/VarroDetector/sample_images"
             )
             self.image_to_analyze = "C:/Users/Aashi/Documents/GitHub/VarroDetector/sample_images/IMG_6184.jpg"
 
             if not self.current_folder:
-                # self.select_button.configure(state="normal")
                 return
 
             self.current_folder = os.path.join(self.current_folder, "")
             self.image_to_analyze = os.path.join(self.image_to_analyze, "")
             self.output_path = os.path.join(self.current_folder, "processed_images")
 
-            if hasattr(self, "image_viewer"):
-                # self.image_viewer.update_canvas_message(
-                #     "Analysis in progress, please wait"
-                # )
-                print("Analysis in progress, please wait")
-
             # Process images
             self.process_images()
-
-            # Update image list
-            # self.update_image_list()
 
             # Run detection
             self.run_detection()
 
             curr_date = datetime.datetime.now()
+            if overrideTreatment:
+                return {
+                    "infestation": True,
+                    "treatment_recommendation": overrideTreatment,
+                    "mite_count": 100,
+                    "delay": False,
+                }
             # TODO: update condition to consider other months too
             if (self.mite_count >= 9 and curr_date.month == 5) or (
                 self.mite_count >= 12 and curr_date.month == 8
@@ -393,53 +349,16 @@ class VarroaDetector:
                     "delay": False,
                 }
 
-            # Enable the listbox after processing is complete
-            # self.image_listbox.configure(state="normal")
-            # self.update_image_list()
-            # Update statistics with the newly loaded boxes
-            # self.update_box_statistics()
-
-            # Initiate all checkbox green lines to False and threshold to 0.1
-            # for filename in self.image_listbox.fullnames:
-            #     self.green_line_enabled[filename] = False
-            #     self.image_confidence_thresholds[filename] = 0.1
-            #     # Load all boxes:
-            #     self.current_boxes[filename] = self.load_boxes_for_image(filename)
-
-            # Enable both save and apply-to-all buttons after successful analysis
-            # self.save_button.configure(state="normal")
-            # self.apply_all_button.configure(state="normal")
-            # self.green_lines_checkbox.configure(state="normal")
-            # self.apply_green_lines_all_button.configure(state="normal")
-
-            # if hasattr(self, "image_viewer"):
-            #     self.image_viewer.update_canvas_message("Select an image to begin")
-
         except Exception as e:
             print(f"Error in processing: {str(e)}")
-            # messagebox.showerror("Error", f"Error in processing: {str(e)}")
             print("Error in processing:", str(e))
-        # finally:
-        #     self.select_button.configure(state="normal")
 
     def process_images(self):
-        # Get all images recursively
-        # print(self.current_folder)
-        # file_images = self.get_all_images(self.current_folder)
-
         folder = "C:/Users/Aashi/Documents/GitHub/VarroDetector/sample_images"
         input_path = (
             "C:/Users/Aashi/Documents/GitHub/VarroDetector/sample_images/IMG_6098.jpg"
         )
         rel_path = os.path.relpath(input_path, folder)
-
-        # if not file_images:
-        #     # messagebox.showwarning(
-        #     #     "Warning", "No JPG or DNG images found in selected folder or subfolders"
-        #     # )
-        #     print("No JPG or DNG images found in selected folder or subfolders")
-        #     # self.select_button.configure(state="normal")
-        #     return
 
         os.makedirs(self.output_path, exist_ok=True)
         print("**********************************")
@@ -448,9 +367,6 @@ class VarroaDetector:
 
         output_dir = os.path.join(self.output_path, os.path.dirname(rel_path))
         os.makedirs(output_dir, exist_ok=True)
-        # output_path = os.path.join(
-        #     self.output_path, os.path.splitext(rel_path)[0] + ".jpg"
-        # )
         base_output_path = os.path.join(
             self.output_path, os.path.splitext(rel_path)[0] + ".jpg"
         )
@@ -463,34 +379,15 @@ class VarroaDetector:
         )
 
         try:
-            # progress = idx / total_files
-            # self.update_progress(
-            #     progress, f"Processing image {idx}/{total_files}: {rel_path}"
-            # )
             print("Processing image")
             binary_mask = None
 
-            # Handle DNG files
-            # if input_path.lower().endswith(".dng"):
-            if False:
-                img = process_dng(input_path)
-                if img is None:
-                    print(f"Failed to process DNG file: {rel_path}")
-                    return
-
-                # Save the base processed DNG as a JPG
-                cv2.imwrite(base_output_path, img)
-                # Now, try to crop it
-                crop_img, binary_mask = crop_green_lines_from_array(img)
-                if crop_img is not None:
-                    cv2.imwrite(glined_output_path, crop_img)
-            else:
-                # For JPGs, copy the original to be the base image
-                shutil.copyfile(input_path, base_output_path)
-                # Now, try to crop it from the original path
-                crop_img, binary_mask = crop_green_lines(self.uploadedImage)
-                if crop_img is not None:
-                    cv2.imwrite(glined_output_path, crop_img)
+            # For JPGs, copy the original to be the base image
+            shutil.copyfile(input_path, base_output_path)
+            # Now, try to crop it from the original path
+            crop_img, binary_mask = crop_green_lines(self.uploadedImage)
+            if crop_img is not None:
+                cv2.imwrite(glined_output_path, crop_img)
             # Save the binary mask if it was successfully generated
             if binary_mask is not None:
                 cv2.imwrite(mask_output_path, binary_mask)
@@ -506,179 +403,48 @@ class VarroaDetector:
                 shutil.copyfile(input_path, base_output_path)
                 shutil.copyfile(input_path, base_output_path)
 
-    # ________________________________
-    # total_files = len(file_images)
-    # for idx, (input_path, rel_path) in enumerate(file_images, 1):
-    #     # Create output directory structure matching input
-    #     output_dir = os.path.join(self.output_path, os.path.dirname(rel_path))
-    #     os.makedirs(output_dir, exist_ok=True)
-
-    #     # Always save output as JPG
-    #     # output_path = os.path.join(self.output_path,
-    #     #                            os.path.splitext(rel_path)[0] + '.jpg')
-
-    #     # Define output paths
-    #     base_output_path = os.path.join(
-    #         self.output_path, os.path.splitext(rel_path)[0] + ".jpg"
-    #     )
-    #     mask_output_path = os.path.join(
-    #         self.output_path, os.path.splitext(rel_path)[0] + ".mask.png"
-    #     )
-
-    #     glined_output_path = os.path.join(
-    #         self.output_path, os.path.splitext(rel_path)[0] + ".g-lined.jpg"
-    #     )
-
-    #     try:
-    #         # progress = idx / total_files
-    #         # self.update_progress(
-    #         #     progress, f"Processing image {idx}/{total_files}: {rel_path}"
-    #         # )
-    #         print("Processing image {}/{}: {}".format(idx, total_files, rel_path))
-    #         binary_mask = None
-
-    #         # Handle DNG files
-    #         if input_path.lower().endswith(".dng"):
-    #             img = process_dng(input_path)
-    #             if img is None:
-    #                 print(f"Failed to process DNG file: {rel_path}")
-    #                 continue
-
-    #             # Save the base processed DNG as a JPG
-    #             cv2.imwrite(base_output_path, img)
-    #             # Now, try to crop it
-    #             crop_img, binary_mask = crop_green_lines_from_array(img)
-    #             if crop_img is not None:
-    #                 cv2.imwrite(glined_output_path, crop_img)
-    #         else:
-    #             # For JPGs, copy the original to be the base image
-    #             shutil.copyfile(input_path, base_output_path)
-    #             # Now, try to crop it from the original path
-    #             crop_img, binary_mask = crop_green_lines(input_path)
-    #             if crop_img is not None:
-    #                 cv2.imwrite(glined_output_path, crop_img)
-    #         # Save the binary mask if it was successfully generated
-    #         if binary_mask is not None:
-    #             cv2.imwrite(mask_output_path, binary_mask)
-
-    #     except Exception as e:
-    #         print(f"Error processing image {rel_path}: {str(e)}")
-    #         # Ensure the base image exists even if cropping fails
-    #         if not os.path.exists(
-    #             base_output_path
-    #         ) and not input_path.lower().endswith(".dng"):
-    #             shutil.copyfile(input_path, base_output_path)
-    #             shutil.copyfile(input_path, base_output_path)
-    #             shutil.copyfile(input_path, base_output_path)
-    #             shutil.copyfile(input_path, base_output_path)
-
     def run_detection(self):
         # self.image_listbox.configure(state="disabled")
         if not self.output_path or not os.path.exists(self.output_path):
             return
 
         try:
-            # Recursively find all JPG files in output_path and its subdirectories
-            file_images = []
-            for root, _, files in os.walk(self.output_path):
-                for f in files:
-                    if f.lower().endswith(".jpg") and not f.lower().endswith(
-                        "g-lined.jpg"
-                    ):  # Not analyze the g-lined to avoid duplicate inference.
-                        # Get full path but store relative path for later use
-                        full_path = os.path.join(root, f)
-                        rel_path = os.path.relpath(full_path, self.output_path)
-                        file_images.append((full_path, rel_path))
-
             print("\n**********************************")
             print("STEP 2: Performing inference")
             print("**********************************")
 
-            total_files = len(file_images)
             suma = 0
-            conf = 0.1
+            img_str = self.uploadedImage
+            if "," in img_str:
+                img_str = img_str.split(",")[1]
 
-            for idx, (img_path, rel_path) in enumerate(file_images, 1):
-                try:
-                    # progress = idx / total_files
-                    # self.update_progress(
-                    #     progress, f"Analyzing image {idx}/{total_files}"
-                    # )
-                    print(f"Analyzing image {idx}/{total_files}")
-
-                    # Create the output directory structure matching input
-                    output_dir = os.path.join(self.output_path, "predict 0.1")
-                    labels_dir = os.path.join(output_dir, "labels")
-                    os.makedirs(labels_dir, exist_ok=True)
-
-                    # Create output directories preserving structure
-                    rel_dir = os.path.dirname(rel_path)
-                    predict_dir = os.path.join(self.output_path, "predict 0.1")
-                    output_dir = (
-                        os.path.join(predict_dir, rel_dir) if rel_dir else predict_dir
-                    )
-                    os.makedirs(output_dir, exist_ok=True)
-
-                    results = self.model(
-                        img_path,
-                        imgsz=(6016),
-                        max_det=2000,
-                        conf=0.1,
-                        iou=0.5,
-                        save=True,
-                        show_labels=False,
-                        line_width=2,
-                        save_txt=True,
-                        save_conf=True,
-                        project=os.path.dirname(output_dir),
-                        name=os.path.basename(output_dir) if rel_dir else "predict 0.1",
-                        verbose=False,
-                        batch=1,
-                        exist_ok=True,
-                    )
-
-                    # Save results with confidence scores
-                    for result in results:
-                        print(
-                            f"Total varroas in file {rel_path}: {len(result.boxes)}"
-                        )  # might cause issues?
-                        self.mite_count = len(result.boxes)
-                        suma += len(result.boxes)
-                        if len(result.boxes) > 0:
-                            # Ensure subdirectory structure exists in labels directory
-                            rel_dir = os.path.dirname(rel_path)
-                            if rel_dir:
-                                os.makedirs(
-                                    os.path.join(labels_dir, rel_dir), exist_ok=True
-                                )
-
-                                # Create output file path preserving directory structure
-                            output_file = os.path.join(
-                                os.path.dirname(output_dir),
-                                os.path.basename(output_dir),
-                                "labels",
-                                os.path.splitext(os.path.basename(rel_path))[0]
-                                + ".txt",
-                            )
-
-                            # Ensure the directory exists
-                            os.makedirs(os.path.dirname(output_file), exist_ok=True)
-
-                            with open(output_file, "w") as f:
-                                for box in result.boxes:
-                                    conf = float(box.conf)
-                                    x, y, w, h = box.xywhn[0].tolist()
-                                    f.write(f"0 {x} {y} {w} {h} {conf}\n")
-                except Exception as e:
-                    print(f"Error analyzing image {rel_path}: {str(e)}")
+            img_bytes = base64.b64decode(img_str)
+            pil_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            results = self.model(
+                source=pil_img,
+                imgsz=(6016),
+                max_det=2000,
+                conf=0.1,
+                iou=0.5,
+                save=True,
+                show_labels=False,
+                line_width=2,
+                save_txt=True,
+                save_conf=True,
+                # project=os.path.dirname(output_dir),
+                # name=os.path.basename(output_dir) if rel_dir else "predict 0.1",
+                verbose=False,
+                batch=1,
+                exist_ok=True,
+            )
+            for result in results:
+                self.mite_count = len(result.boxes)
+                suma += len(result.boxes)
 
             print("\nTotal varroas detected:", suma)
-
-            # self.update_progress(1.0, "Analysis complete")
             print("Analysis complete")
 
         except Exception as e:
             print(f"Error in detection: {str(e)}")
-            # messagebox.showerror("Error", f"Error in detection: {str(e)}")
             print("Error in detection:", str(e))
             print("Error in detection:", str(e))

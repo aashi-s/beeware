@@ -13,7 +13,6 @@ import {
 } from "react-native";
 import base64 from "react-native-base64";
 import { Device as BLEDevice, BleManager } from "react-native-ble-plx";
-import { readFile } from "react-native-fs";
 import { launchImageLibrary } from "react-native-image-picker";
 import uuid from "react-native-uuid";
 import { notificationStorage, userStorage } from "../../index";
@@ -61,7 +60,7 @@ function HomeScreen() {
   const [sessionId, setSessionId] = useState(""); // does it need to be kept in state
   const descriptionRef = useRef("");
 
-  const backendUrl = "http://10.10.101.47:8000";
+  const backendUrl = "https://loriann-imbricative-transfixedly.ngrok-free.dev";
   const BLTManager = new BleManager();
 
   // update these
@@ -129,7 +128,7 @@ function HomeScreen() {
           projectId,
         })
       ).data;
-      console.log("token is", token);
+      console.log("token is", token); //ExponentPushToken[7csFM6L1BmTvSUz3ytH-5j]
     } catch (e) {
       token = `${e}`;
     }
@@ -178,7 +177,7 @@ function HomeScreen() {
         // seconds: delay,
       },
     }).then((res) => {
-      console.log("notification scheduled response: ", res); // see what this is
+      console.log("notification scheduled response: ", res); // 75eb45cc-ed67-4536-b270-d0c1eadbebd4
       const notificationId = uuid.v4();
       const notificationDetails = {
         sessionId: sessionId,
@@ -383,30 +382,25 @@ function HomeScreen() {
       });
   }
 
-  const [capturedImageURI, setCapturedImageURI] = useState("");
+  const [encodedImage, setEncodedImage] = useState("");
 
-  const loadImageBase64 = async (capturedImageURI: string) => {
-    try {
-      const base64Data = await readFile(capturedImageURI, "base64");
-      return "data:image/jpeg;base64," + base64Data;
-    } catch (error) {
-      console.error("Error converting image to base64:", error);
-    }
-  };
   const handleUploadImage = async () => {
-    const result = await launchImageLibrary({ mediaType: "photo" });
+    const result = await launchImageLibrary({
+      mediaType: "photo",
+      includeBase64: true,
+    });
     if (result.didCancel) {
       console.log("User cancelled image picker");
     } else if (result.errorCode) {
       console.log(result.errorMessage);
-    } else {
+    } else if (result.assets && result.assets.length > 0) {
+      console.log("got an image");
       const source = result.assets![0]; //Unwrap the result assets and grab the first item (the captured image)
-      setCapturedImageURI(source.uri!);
+      setEncodedImage(`data:${source.type};base64,${source.base64}`);
     }
   };
 
   const handleStartAnalysis = async (temperature: string) => {
-    const base64Image = await loadImageBase64(capturedImageURI);
     try {
       setIsAnalyzing(true);
       const response = await fetch(`${backendUrl}/temperature`, {
@@ -415,8 +409,9 @@ function HomeScreen() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          temperature: temperature == "" ? null : temperature,
-          image: base64Image,
+          temperature: temperature == "" ? "20" : temperature,
+          image: encodedImage,
+          overrideTreatment: null, // type in any treatment name string here, or leave it none
         }),
       });
       if (response.ok) {
@@ -434,12 +429,12 @@ function HomeScreen() {
         console.log(responseData);
         const sessionUpdate = {
           ...sessionDetails,
-          miteCount: responseData["mite_count"],
-          infestation: responseData["infestation"],
-          temperature: temperature,
-          treatment: responseData["treatment_recommendation"],
+          miteCount: 100, // responseData["mite_count"],
+          infestation: true, // responseData["infestation"],
+          temperature: "20", // temperature,
+          treatment: "thymol", // responseData["treatment_recommendation"],
           approval: "pending" as ApprovalType,
-          delay: responseData["delay"], // verify that the boolean works here
+          delay: false, //responseData["delay"], // verify that the boolean works here
           applied: "pending" as ApplicationType,
         };
         setSessionDetails(sessionUpdate);
@@ -448,11 +443,10 @@ function HomeScreen() {
         userStorage.set(currSession, JSON.stringify(sessionUpdate));
         setTreatment(responseData["treatment_recommendation"]);
         setInfestation(responseData["infestation"]); // also check if boolean works here
-        sendTreatment(responseData["treatment_recommendation"]);
         // if infestation is false, also schedule a notification 3 months from now
-        if (!responseData["infestation"]) {
-          await schedulePushNotification(7.884 * 10 ** 6); // 3 months from now
-        }
+        // if (!responseData["infestation"]) {
+        //   await schedulePushNotification(7.884 * 10 ** 6); // 3 months from now
+        // }
       } else {
         // Handle error response
         console.error("Error:", response.statusText);
@@ -581,6 +575,8 @@ function HomeScreen() {
         >
           {treatment == null
             ? "Run analysis to get a treatment"
+            : treatment == "null"
+            ? "The temperature isn't quite right, don't treat the hive for now!"
             : "We recommend " + treatment}
         </Text>
       </View>
@@ -604,7 +600,7 @@ function HomeScreen() {
               onPress={() => {
                 handleStartAnalysis(temperature);
               }}
-              disabled={temperature == "" ? true : false}
+              // disabled={temperature == "" ? true : false}
             />
           ) : (
             <Button title="Analyzing" disabled={false} />
@@ -633,9 +629,37 @@ function HomeScreen() {
             }}
           />
           <Button
-            title="Approve recommended treatment"
-            onPress={() => {}}
-            disabled={sessionDetails.approval != "pending"}
+            title={
+              sessionDetails.approval == "pending"
+                ? "Approve recommended treatment"
+                : "Treatment approved...sent to pump"
+            }
+            onPress={() => {
+              const sessionUpdate = {
+                ...sessionDetails,
+                approval: "approved" as ApprovalType,
+              };
+              setSessionDetails(sessionUpdate);
+              userStorage.set(sessionId, JSON.stringify(sessionUpdate));
+              if (treatment != "null") {
+                sendTreatment(treatment);
+              }
+            }}
+            disabled={
+              sessionDetails.approval != "pending" || treatment == "null"
+            }
+          />
+          <Button
+            title="Get last notification details"
+            onPress={() => {
+              const notifIds = notificationStorage.getAllKeys();
+              const data =
+                notifIds.length > 0
+                  ? notificationStorage.getString(notifIds[0]) || ""
+                  : "";
+              console.log("notif details from database", JSON.parse(data));
+            }}
+            disabled={false}
           />
         </TouchableOpacity>
       </View>
