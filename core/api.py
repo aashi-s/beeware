@@ -48,6 +48,7 @@ class Config(BaseModel):
 class RequestBody(BaseModel):
     temperature: str | None
     image: str
+    overrideTreatment: str | None
 
 
 @app.get("/")
@@ -59,7 +60,6 @@ def read_root():
 async def chat(
     query: RequestBody = Body(...),
 ):
-    print("temperature: ", query.temperature)
-    print("image: ", query.image)
-
-    return varroa_detector.select_folder(query.temperature, query.image)
+    return varroa_detector.select_folder(
+        query.temperature, query.image, query.overrideTreatment
+    )

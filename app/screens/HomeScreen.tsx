@@ -1,7 +1,7 @@
-import { useQuery, useRealm } from "@realm/react";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
-import React, { useEffect, useRef, useState } from "react";
+import * as TaskManager from "expo-task-manager";
+import React, { useEffect, useState } from "react";
 import {
   Alert,
   Button,
@@ -14,9 +14,9 @@ import {
 } from "react-native";
 import base64 from "react-native-base64";
 import { Device as BLEDevice, BleManager } from "react-native-ble-plx";
-import { readFile } from "react-native-fs";
 import { launchImageLibrary } from "react-native-image-picker";
-import { Task } from "../schemas/Task";
+import uuid from "react-native-uuid";
+import { notificationStorage, userStorage } from "../../index";
 
 LogBox.ignoreLogs(["new NativeEventEmitter"]); // Ignore log notification by message
 LogBox.ignoreAllLogs(); //Ignore all log notifications
@@ -30,46 +30,61 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// TYPES
+type ApprovalType = "pending" | "approved" | "declined";
+type ApplicationType = "pending" | "success" | "error" | "null";
 function HomeScreen() {
+  // STATES
   const [expoPushToken, setExpoPushToken] = useState("");
+  const [sessionDetails, setSessionDetails] = useState<{
+    userInputs?: string;
+    miteCount?: number;
+    infestation?: boolean;
+    temperature?: string;
+    treatment?: string;
+    approval?: ApprovalType;
+    delay?: boolean;
+    applied?: ApplicationType;
+  }>({
+    userInputs: undefined,
+    miteCount: undefined,
+    infestation: undefined,
+    temperature: undefined,
+    treatment: undefined,
+    approval: undefined,
+    delay: undefined,
+    applied: undefined,
+  });
   const [channels, setChannels] = useState<Notifications.NotificationChannel[]>(
     []
   );
   const [notification, setNotification] = useState<
     Notifications.Notification | undefined
   >(undefined);
-  const tasks = useQuery(Task);
-  const descriptionRef = useRef("");
-  const realm = useRealm();
+  const [sessionId, setSessionId] = useState("");
+  const [isConnected, setIsConnected] = useState(false); //Is a device connected?
+  const [isAnalyzing, setIsAnalyzing] = useState(false); //Is the analysis process ongoing?
+  const [treatment, setTreatment] = useState<string>(""); //Treatment value returned
+  const [infestation, setInfestation] = useState<boolean | undefined>(
+    undefined
+  ); //Infestation boolean value returned
+  const [connectedDevice, setConnectedDevice] = useState<BLEDevice>(); //What device is connected?
+  const [temperature, setTemperature] = useState("");
+  const [treatmentOnMicrocontroller, setTreatmentOnMicrocontroller] = useState<
+    string | null
+  >(null); // treatment value that microcontroller has
+  const [encodedImage, setEncodedImage] = useState("");
 
-  const backendUrl = "http://10.10.101.47:8000";
-  const BLTManager = new BleManager();
-
-  // update these
+  // CONSTANTS
+  const BACKEND_URL = "https://loriann-imbricative-transfixedly.ngrok-free.dev";
   const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
   const TEMPERATURE_UUID = "6d68efe5-04b6-4a85-abc4-c2670b7bf7fd";
   const TREATMENT_UUID = "f27b53ad-c63d-49a0-8c0f-9f297e6cc520";
+  const BACKGROUND_NOTIFICATION_TASK = "BACKGROUND-NOTIFICATION-TASK";
+  // const CONSOLE_UUID = "";
+  const THREE_MONTHS = 3 * 30 * 24 * 60 * 60; // in seconds
 
-  //Is a device connected?
-  const [isConnected, setIsConnected] = useState(false);
-
-  //Is the analysis process ongoing?
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-
-  //Treatment value returned
-  const [treatment, setTreatment] = useState(null);
-
-  //Infestation boolean value returned
-  const [infestation, setInfestation] = useState(null);
-
-  //What device is connected?
-  const [connectedDevice, setConnectedDevice] = useState<BLEDevice>();
-
-  const [temperature, setTemperature] = useState("");
-  // const [treatment, setTreatment] = useState(false);
-  const [treatmentOnMicrocontroller, setTreatmentOnMicrocontroller] = useState<
-    string | null
-  >(null);
+  const BLTManager = new BleManager();
 
   async function registerForPushNotificationsAsync() {
     let token;
@@ -108,7 +123,7 @@ function HomeScreen() {
           projectId,
         })
       ).data;
-      console.log("token is", token);
+      console.log("token is", token); //ExponentPushToken[7csFM6L1BmTvSUz3ytH-5j]
     } catch (e) {
       token = `${e}`;
     }
@@ -132,52 +147,57 @@ function HomeScreen() {
       Notifications.addNotificationResponseReceivedListener((response) => {
         console.log(response);
       });
+    registerBackgroundNotificationTask();
     return () => {
       notificationListener.remove();
       responseListener.remove();
     };
   }, []);
 
-  async function schedulePushNotification() {
-    // update this to be 3 months from now
+  async function schedulePushNotification(
+    title: string,
+    body: string,
+    seconds?: number
+  ) {
+    const content = {
+      title,
+      body,
+    };
+    const sendDate = new Date();
+    sendDate.setSeconds(sendDate.getSeconds() + (seconds || 30));
+
     await Notifications.scheduleNotificationAsync({
-      content: {
-        title: "Test notification",
-        body: "123",
-        data: { data: "data", test: { test1: "more data" } },
-      },
+      content,
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
-        seconds: 30,
-        // seconds: 3 * 30 * 24 * 60 * 60,
+        seconds: seconds || 30,
       },
+    }).then((notificationId) => {
+      const notificationDetails = {
+        sessionId: sessionId,
+        status: "scheduled",
+        sendDate: sendDate.toISOString(),
+        title: content.title,
+        body: content.body,
+      };
+      notificationStorage.set(
+        notificationId,
+        JSON.stringify(notificationDetails)
+      );
     });
   }
 
-  // doesnt seem to be used
-  // useEffect(() => {
-  //   if (!connectedDevice || !connectedDevice.isConnected) {
-  //     return;
-  //   }
-  //   const sub = connectedDevice.monitorCharacteristicForService(
-  //     SERVICE_UUID,
-  //     TEMPERATURE_UUID,
-  //     (error, characteristic) => {
-  //       if (error || !characteristic?.value) {
-  //         return;
-  //       }
-  //       setTemperature(base64.decode(characteristic?.value));
-  //       console.log(
-  //         "USEEFFECT Message update received: ",
-  //         base64.decode(characteristic?.value)
-  //       );
-  //     }
-  //   );
-  //   return () => sub.remove();
-  // }, [connectedDevice]);
-
   async function openAppNotificationSettings() {
     await Linking.openSettings();
+  }
+
+  TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, (data) => {
+    console.log("Notification received in background!", data);
+    return Promise.resolve();
+  });
+
+  async function registerBackgroundNotificationTask() {
+    await Notifications.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK);
   }
 
   // Scans availbale BLT Devices and then call connectDevice
@@ -227,6 +247,7 @@ function HomeScreen() {
       const isDeviceConnected = await connectedDevice.isConnected();
       if (isDeviceConnected) {
         BLTManager.cancelTransaction("temperaturetransaction");
+        // BLTManager.cancelTransaction("consoletransaction");
         BLTManager.cancelTransaction("nightmodetransaction");
 
         BLTManager.cancelDeviceConnection(connectedDevice.id).then(() =>
@@ -295,7 +316,6 @@ function HomeScreen() {
           .readCharacteristicForService(SERVICE_UUID, TREATMENT_UUID)
           .then((valenc) => {
             if (valenc?.value)
-              // setTreatment(StringToBool(base64.decode(valenc?.value)));
               setTreatmentOnMicrocontroller(base64.decode(valenc?.value));
           });
 
@@ -339,57 +359,94 @@ function HomeScreen() {
           "treatmenttransaction"
         );
 
+        // Console
+        // device.monitorCharacteristicForService(
+        //   SERVICE_UUID,
+        //   CONSOLE_UUID,
+        //   (error, characteristic) => {
+        //     if (characteristic?.value != null) {
+        //       console.log(
+        //         "Console update received: ",
+        //         base64.decode(characteristic?.value)
+        //       );
+        //     }
+        //   },
+        //   "consoletransaction"
+        // );
+
         console.log("Connection established");
       });
   }
 
-  const [capturedImageURI, setCapturedImageURI] = useState("");
-
-  const loadImageBase64 = async (capturedImageURI: string) => {
-    try {
-      const base64Data = await readFile(capturedImageURI, "base64");
-      return "data:image/jpeg;base64," + base64Data;
-    } catch (error) {
-      console.error("Error converting image to base64:", error);
-    }
-  };
   const handleUploadImage = async () => {
-    const result = await launchImageLibrary({ mediaType: "photo" });
+    const result = await launchImageLibrary({
+      mediaType: "photo",
+      includeBase64: true,
+    });
     if (result.didCancel) {
       console.log("User cancelled image picker");
     } else if (result.errorCode) {
       console.log(result.errorMessage);
-    } else {
+    } else if (result.assets && result.assets.length > 0) {
+      console.log("got an image");
       const source = result.assets![0]; //Unwrap the result assets and grab the first item (the captured image)
-      setCapturedImageURI(source.uri!);
+      setEncodedImage(`data:${source.type};base64,${source.base64}`);
     }
   };
 
   const handleStartAnalysis = async (temperature: string) => {
-    const base64Image = await loadImageBase64(capturedImageURI);
     try {
       setIsAnalyzing(true);
-      const response = await fetch(`${backendUrl}/temperature`, {
+      const response = await fetch(`${BACKEND_URL}/temperature`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          temperature: temperature == "" ? null : temperature,
-          image: base64Image,
+          temperature: temperature == "" ? "20" : temperature,
+          image: encodedImage,
+          overrideTreatment: "test treatment", // type in any treatment name string here, or leave it none
         }),
       });
       if (response.ok) {
         // Parse the response body as JSON
         const jsonResponse = await response.json();
         // Extract the actual response content
-        const responseData = jsonResponse; // Adjust this according to the structure of your response
+        const responseData: {
+          mite_count: number;
+          infestation: boolean;
+          treatment_recommendation: string;
+          delay: boolean;
+        } = jsonResponse; // Adjust this according to the structure of your response
 
         // Now you can work with the actual response data
         console.log(responseData);
+
+        const sessionUpdate = {
+          ...sessionDetails,
+          miteCount: responseData["mite_count"],
+          infestation: responseData["infestation"],
+          temperature: temperature,
+          treatment: responseData["treatment_recommendation"],
+          approval: "pending" as ApprovalType,
+          delay: responseData["delay"],
+          applied: "pending" as ApplicationType,
+        };
+        console.log(sessionUpdate);
+        setSessionDetails(sessionUpdate);
+        const currSession = uuid.v4();
+        setSessionId(currSession);
+        userStorage.set(currSession, JSON.stringify(sessionUpdate));
         setTreatment(responseData["treatment_recommendation"]);
         setInfestation(responseData["infestation"]);
-        sendTreatment(responseData["treatment_recommendation"]);
+        // if infestation is false, also schedule a notification 3 months from now
+        if (!responseData["infestation"]) {
+          await schedulePushNotification(
+            "It's time to check your hive!",
+            "Take a quick picture of your sticky board to start the process",
+            THREE_MONTHS
+          ); // 3 months in seconds
+        }
       } else {
         // Handle error response
         console.error("Error:", response.statusText);
@@ -400,18 +457,6 @@ function HomeScreen() {
       setIsAnalyzing(false);
     }
   };
-
-  // const createNewTask = () => {
-  //   realm.write(() => {
-  //     const newTask = new Task(realm, descriptionRef.current);
-
-  //     // clear input field
-  //     descriptionRef.current = "";
-
-  //     // return task
-  //     return newTask;
-  //   });
-  // };
 
   return (
     <View>
@@ -483,7 +528,7 @@ function HomeScreen() {
           }}
         >
           {temperature == ""
-            ? "Nothing yet"
+            ? "Temperature is not provided"
             : "Current temperature: " + temperature}
         </Text>
       </View>
@@ -494,19 +539,30 @@ function HomeScreen() {
       <View
         style={{
           justifyContent: "space-around",
-          alignItems: "flex-start",
-          flexDirection: "row",
+          alignItems: "center",
+          flexDirection: "column",
         }}
       >
         <Text
           style={{
             fontSize: 15,
             fontFamily: "Cochin",
+            fontWeight: "900",
           }}
         >
-          {infestation == null
-            ? "Run analysis to see if your hive is infested"
-            : "Infestation " + infestation}
+          Infestation level
+        </Text>
+        <Text
+          style={{
+            fontSize: 15,
+            fontFamily: "Cochin",
+          }}
+        >
+          {infestation == true
+            ? "Your hive is infested, see our recommendation"
+            : infestation == false
+            ? "Not infested! We'll notify you to check again in 3 months"
+            : "Run analysis to see if your hive is infested"}
         </Text>
       </View>
 
@@ -516,10 +572,19 @@ function HomeScreen() {
       <View
         style={{
           justifyContent: "space-around",
-          alignItems: "flex-start",
-          flexDirection: "row",
+          alignItems: "center",
+          flexDirection: "column",
         }}
       >
+        <Text
+          style={{
+            fontSize: 15,
+            fontFamily: "Cochin",
+            fontWeight: "900",
+          }}
+        >
+          {treatment == "None" ? "No treatment needed!" : "We recommend..."}
+        </Text>
         <Text
           style={{
             fontSize: 15,
@@ -528,117 +593,92 @@ function HomeScreen() {
         >
           {treatment == null
             ? "Run analysis to get a treatment"
-            : "We recommend " + treatment}
+            : treatment == "null"
+            ? "The temperature isn't quite right, don't treat the hive for now!"
+            : treatment !== "None" && treatment}
         </Text>
       </View>
 
-      <View style={{ paddingBottom: 20 }}></View>
-
-      {/* Start Analysis Button */}
-      <View
-        style={{
-          justifyContent: "space-around",
-          alignItems: "flex-start",
-          flexDirection: "row",
-        }}
-      >
-        <TouchableOpacity style={{ width: 120 }}>
-          {!isAnalyzing ? (
+      <View style={{ paddingBottom: 20, flexDirection: "row" }}>
+        <View>
+          <TouchableOpacity
+            style={{
+              width: "100%",
+              flexWrap: "wrap",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: "10",
+              flexDirection: "row",
+            }}
+          >
+            {/* Start Analysis Button */}
             <Button
-              title={
-                temperature == "" ? "Needs a temp first" : "Start Analysis"
-              }
+              title={isAnalyzing ? "Analyzing" : "Start Analysis"}
               onPress={() => {
                 handleStartAnalysis(temperature);
               }}
-              disabled={temperature == "" ? true : false}
+              disabled={isAnalyzing}
             />
-          ) : (
-            <Button title="Analyzing" disabled={false} />
-          )}
-        </TouchableOpacity>
+            {/* Upload Image Button */}
+            <Button
+              title="Upload Image"
+              disabled={false}
+              onPress={() => handleUploadImage()}
+            />
+            <Button
+              title="Schedule Notification"
+              onPress={async () => {
+                await schedulePushNotification("test for now", "30s from now");
+              }}
+            />
+            <Button
+              title={
+                sessionDetails.approval == "pending"
+                  ? "Approve recommended treatment"
+                  : sessionDetails.approval == "approved"
+                  ? "Treatment approved...sent to pump"
+                  : "Declined recommended treatment"
+              }
+              onPress={() => {
+                const sessionUpdate = {
+                  ...sessionDetails,
+                  approval: "approved" as ApprovalType,
+                };
+                setSessionDetails(sessionUpdate);
+                userStorage.set(sessionId, JSON.stringify(sessionUpdate));
+                if (treatment != "null") {
+                  sendTreatment(treatment);
+                }
+              }}
+              disabled={
+                sessionDetails.approval != "pending" || treatment == "null"
+              }
+            />
+            <Button
+              title="Get last notification details"
+              onPress={() => {
+                const notifIds = notificationStorage.getAllKeys();
+                const data =
+                  notifIds.length > 0
+                    ? notificationStorage.getString(notifIds[0]) || ""
+                    : "";
+                console.log("notif details from database", JSON.parse(data));
+              }}
+            />
+            <Button
+              title="Get full user database"
+              onPress={() => {
+                const userIds = userStorage.getAllKeys();
+                console.log(userIds);
+                for (const id of userIds) {
+                  const res = userStorage.getString(id);
+                  console.log("user info", id, JSON.parse(res || ""));
+                }
+              }}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
-
-      {/* Upload Image Button */}
-      <View
-        style={{
-          justifyContent: "space-around",
-          alignItems: "flex-start",
-          flexDirection: "row",
-        }}
-      >
-        <TouchableOpacity style={{ width: 120 }}>
-          <Button
-            title="Upload Image"
-            disabled={false}
-            onPress={() => handleUploadImage()}
-          />
-          <Button
-            title="Schedule Notification"
-            onPress={async () => {
-              await schedulePushNotification();
-            }}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* <View style={{ height: Dimensions.get("screen").height - 132 }}>
-        <Text
-          style={{
-            fontSize: 18,
-            margin: 16,
-            fontWeight: "700",
-          }}
-        >
-          TASK LIST
-        </Text>
-        <TextInput
-          placeholder="Enter New Task"
-          autoCapitalize="none"
-          nativeID="description"
-          multiline={true}
-          numberOfLines={8}
-          value={descriptionRef.current}
-          onChangeText={(text) => {
-            descriptionRef.current = text;
-          }}
-          style={{
-            fontSize: 20,
-            borderWidth: 1,
-            borderRadius: 4,
-            // borderColor: "#455fff",
-            paddingHorizontal: 8,
-            paddingVertical: 4,
-            marginBottom: 0,
-            marginHorizontal: 16,
-          }}
-        />
-        <TouchableOpacity
-          style={{
-            backgroundColor: "grey",
-            padding: 10,
-            borderRadius: 5,
-            marginTop: 8,
-            marginLeft: 16,
-            width: 120,
-          }}
-          onPress={() => {
-            createNewTask();
-          }}
-        >
-          <Text
-            style={{
-              color: "white",
-              textAlign: "center",
-              fontWeight: "600",
-              fontSize: 12,
-            }}
-          >
-            SAVE TASK
-          </Text>
-        </TouchableOpacity>
-        <Text>{JSON.stringify(tasks, null, 2)}</Text>
-      </View> */}
     </View>
   );
 }
