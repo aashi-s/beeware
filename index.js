@@ -1,7 +1,7 @@
 // import messaging from "@react-native-firebase/messaging";
 import { registerRootComponent } from "expo";
 import { createMMKV } from "react-native-mmkv";
-import App from "./app";
+import App from "./app/(tabs)";
 
 export const userStorage = createMMKV({ id: "user-sessions" });
 export const notificationStorage = createMMKV({ id: "notifications" });

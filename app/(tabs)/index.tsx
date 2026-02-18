@@ -1,13 +1,17 @@
+import { Button } from "@expo/ui/jetpack-compose";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import * as TaskManager from "expo-task-manager";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
-  Button,
+  Animated,
+  Dimensions,
   Linking,
   LogBox,
   PermissionsAndroid,
+  ScrollView,
+  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -15,6 +19,7 @@ import {
 import base64 from "react-native-base64";
 import { Device as BLEDevice, BleManager } from "react-native-ble-plx";
 import { launchImageLibrary } from "react-native-image-picker";
+import Modal from "react-native-modal";
 import uuid from "react-native-uuid";
 import { notificationStorage, userStorage } from "../../index";
 
@@ -33,8 +38,16 @@ Notifications.setNotificationHandler({
 // TYPES
 type ApprovalType = "pending" | "approved" | "declined";
 type ApplicationType = "pending" | "success" | "error" | "null";
-function HomeScreen() {
+export default function Index() {
   // STATES
+  const [treatmentStep, setTreatmentStep] = useState(1);
+  const [alerts, setAlerts] = useState<
+    { level: string; title: string; body: string }[]
+  >([{ level: "warning", title: "testtitle", body: "testbody" }]);
+  const [imageStatus, setImageStatus] = useState("");
+  const [nextStep, setNextStep] = useState<number | null>(null);
+  const [isModalVisible, setModalVisible] = useState(false);
+  const [treatmentModalVisible, setTreatmentModalVisible] = useState(false);
   const [expoPushToken, setExpoPushToken] = useState("");
   const [sessionDetails, setSessionDetails] = useState<{
     userInputs?: string;
@@ -63,7 +76,7 @@ function HomeScreen() {
   >(undefined);
   const [sessionId, setSessionId] = useState("");
   const [isConnected, setIsConnected] = useState(false); //Is a device connected?
-  const [isAnalyzing, setIsAnalyzing] = useState(false); //Is the analysis process ongoing?
+  const [isAnalyzing, setIsAnalyzing] = useState("Start Analysis"); //Is the analysis process ongoing?
   const [treatment, setTreatment] = useState<string>(""); //Treatment value returned
   const [infestation, setInfestation] = useState<boolean | undefined>(
     undefined
@@ -85,6 +98,8 @@ function HomeScreen() {
   const THREE_MONTHS = 3 * 30 * 24 * 60 * 60; // in seconds
 
   const BLTManager = new BleManager();
+
+  const slideAnim = useRef(new Animated.Value(0)).current;
 
   async function registerForPushNotificationsAsync() {
     let token;
@@ -378,6 +393,219 @@ function HomeScreen() {
       });
   }
 
+  const closeUploadModal = () => {
+    setModalVisible(false);
+    setTreatmentStep(1);
+    slideAnim.setValue(0);
+    setImageStatus("");
+    setIsAnalyzing("Start Analysis");
+  };
+
+  const closeTreatmentModal = () => {
+    setTreatmentModalVisible(false);
+    slideAnim.setValue(0);
+  };
+
+  const getNextStep = (newStep: number) => {
+    if (treatmentStep === newStep) return;
+
+    const direction = newStep > treatmentStep ? 1 : -1;
+
+    Animated.timing(slideAnim, {
+      toValue: -direction * width,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => {
+      setTreatmentStep(newStep);
+      slideAnim.setValue(direction * width);
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    });
+  };
+
+  const renderStep = (step: number) => {
+    switch (step) {
+      case 1:
+        return (
+          <>
+            <Text>
+              This check helps you understand whether your hive has a Varroa
+              mite infestation.
+            </Text>
+            <Text>Before you start</Text>
+            <Text>
+              When you're ready, go to your hive to start the mite check
+            </Text>
+            <Text>For best results, complete this check with daylight</Text>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => getNextStep(2)}
+            >
+              <Text style={styles.buttonText}>Start check</Text>
+            </TouchableOpacity>
+            <Text onPress={closeUploadModal}>Skip tutorial</Text>
+          </>
+        );
+      case 2:
+        return (
+          <>
+            <Text>Instructions</Text>
+            <Text>
+              Slide out the bottom board holding the sticky board , keeping it
+              flat and steady
+            </Text>
+            <Text>Disturbing the surface may affect mite counts</Text>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => getNextStep(3)}
+            >
+              <Text style={styles.buttonText}>Continue</Text>
+            </TouchableOpacity>
+          </>
+        );
+      case 3:
+        return (
+          <>
+            <Text>Instructions</Text>
+            <Text>Take a photo of your hive's sticky board</Text>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => handleUploadImage()}
+            >
+              <Text style={styles.buttonText}>Upload Image</Text>
+            </TouchableOpacity>
+            {imageStatus != "" && (
+              <>
+                <Text>{imageStatus}</Text>
+                <TouchableOpacity
+                  style={styles.button}
+                  onPress={() => {
+                    handleStartAnalysis(temperature);
+                  }}
+                  disabled={isAnalyzing != "Start Analysis"}
+                >
+                  <Text style={styles.buttonText}>{isAnalyzing}</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {isAnalyzing == "Analysis Completed" && (
+              <TouchableOpacity
+                style={styles.button}
+                onPress={() => {
+                  closeUploadModal();
+                  setTreatmentModalVisible(true);
+                }}
+              >
+                <Text style={styles.buttonText}>Go to treatment modal</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        );
+      default:
+        return null;
+    }
+  };
+
+  const renderTreatment = () => {
+    switch (treatment) {
+      case "None":
+        return (
+          <>
+            <Text>Treatment Not Recommended</Text>
+            <Text>
+              Based on your mite check from January 12, no infestation is
+              detected and treatment is not necessary
+            </Text>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => closeTreatmentModal}
+            >
+              <Text style={styles.buttonText}>Close</Text>
+            </TouchableOpacity>
+          </>
+        );
+      case "null":
+        return (
+          <>
+            <Text>Recommended Treatment: Oxalic Acid</Text>
+            <Text>Alert Component (need to fix this)</Text>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => closeTreatmentModal}
+            >
+              <Text style={styles.buttonText}>Close</Text>
+            </TouchableOpacity>
+          </>
+        );
+      case "success":
+        return (
+          <>
+            <Text>{treatment}: Applied</Text>
+            <Text>
+              The recommended treatment has been applied on Jan 12 at 11:59pm.
+              You can view it in your hive history.
+            </Text>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => closeTreatmentModal}
+            >
+              <Text style={styles.buttonText}>Close</Text>
+            </TouchableOpacity>
+          </>
+        );
+      case "error":
+        return (
+          <>
+            <Text>{treatment}: Treatment Application Failed</Text>
+            <Text>
+              The recommended treatment has not been applied due to an error.
+            </Text>
+            <TouchableOpacity
+              style={styles.button}
+              onPress={() => closeTreatmentModal}
+            >
+              <Text style={styles.buttonText}>Close</Text>
+            </TouchableOpacity>
+          </>
+        );
+      // if there is a treatment
+      default:
+        const today = new Date().toDateString();
+        return (
+          <>
+            <Text>Recommended Treatment: {treatment}</Text>
+            <Text>
+              This treatment is recommended based on your mite check from{" "}
+              {today}. Learn more
+            </Text>
+            <Text>
+              I understand that this action will apply the recommended treatment
+              inside my beehive
+            </Text>
+            <TouchableOpacity
+              disabled={!isConnected} // also add the checkbox condition here
+              style={styles.button}
+              onPress={() => {
+                const sessionUpdate = {
+                  ...sessionDetails,
+                  approval: "approved" as ApprovalType,
+                };
+                setSessionDetails(sessionUpdate);
+                userStorage.set(sessionId, JSON.stringify(sessionUpdate));
+                sendTreatment(treatment);
+              }}
+            >
+              <Text style={styles.buttonText}>Apply Treatment</Text>
+            </TouchableOpacity>
+            <Text onPress={() => closeTreatmentModal()}>Not Now</Text>
+          </>
+        );
+    }
+  };
+
   const handleUploadImage = async () => {
     const result = await launchImageLibrary({
       mediaType: "photo",
@@ -387,16 +615,17 @@ function HomeScreen() {
       console.log("User cancelled image picker");
     } else if (result.errorCode) {
       console.log(result.errorMessage);
+      setImageStatus("Error Uploading Image");
     } else if (result.assets && result.assets.length > 0) {
-      console.log("got an image");
       const source = result.assets![0]; //Unwrap the result assets and grab the first item (the captured image)
       setEncodedImage(`data:${source.type};base64,${source.base64}`);
+      setImageStatus("Uploaded Image Successfully");
     }
   };
 
   const handleStartAnalysis = async (temperature: string) => {
     try {
-      setIsAnalyzing(true);
+      setIsAnalyzing("Analyzing");
       const response = await fetch(`${BACKEND_URL}/temperature`, {
         method: "POST",
         headers: {
@@ -447,240 +676,193 @@ function HomeScreen() {
             THREE_MONTHS
           ); // 3 months in seconds
         }
+        setIsAnalyzing("Analysis Completed");
       } else {
         // Handle error response
         console.error("Error:", response.statusText);
+        setIsAnalyzing("Analysis Failed");
       }
     } catch (error) {
       console.error(error);
-    } finally {
-      setIsAnalyzing(false);
+      setIsAnalyzing("Analysis Failed");
     }
   };
 
+  const { height, width } = Dimensions.get("window");
+  const styles = StyleSheet.create({
+    container: { flex: 1, justifyContent: "center", alignItems: "center" },
+    modal: { justifyContent: "flex-end", margin: 0 },
+    sheet: {
+      height: height * 0.8,
+      backgroundColor: "white",
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      padding: 20,
+      elevation: 0,
+    },
+    handle: {
+      width: 40,
+      height: 5,
+      backgroundColor: "#ccc",
+      borderRadius: 3,
+      alignSelf: "center",
+      marginBottom: 15,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: "600",
+      marginBottom: 10,
+    },
+    button: {
+      backgroundColor: "#4caf50",
+      padding: 12,
+      borderRadius: 8,
+      alignItems: "center",
+      marginTop: 15,
+      color: "white",
+    },
+    buttonText: {
+      color: "white",
+      fontWeight: "600",
+      textAlign: "center",
+    },
+    success: { backgroundColor: "#E7F4E8" },
+    warning: { backgroundColor: "#FFF4E4" },
+    error: { backgroundColor: "#FFE2E5" },
+    generalAlert: { backgroundColor: "#EAF2FF" },
+  });
+
+  const getTimeOfDay = () => {
+    const now = new Date();
+    const hour = now.getHours();
+    if (hour > 3 && hour < 12) {
+      return "Morning";
+    }
+    if (hour >= 12 && hour < 17) {
+      return "Afternoon";
+    }
+    return "Evening";
+  };
+
   return (
-    <View>
-      <View style={{ paddingBottom: 200 }}></View>
-
-      {/* Title */}
-      <View
-        style={{
-          justifyContent: "space-around",
-          alignItems: "flex-start",
-          flexDirection: "row",
-        }}
-      >
-        <Text
-          style={{
-            fontSize: 20,
-            fontWeight: "bold",
-          }}
-        >
-          BeeWare
-        </Text>
+    <ScrollView>
+      {/* Greeting */}
+      <View>
+        <Text>Good {getTimeOfDay()},</Text>
+        <Text>Implement Name</Text>
       </View>
-
-      <View style={{ paddingBottom: 20 }}></View>
-
-      {/* Connect Button */}
-      <View
-        style={{
-          justifyContent: "space-around",
-          alignItems: "flex-start",
-          flexDirection: "row",
-        }}
-      >
-        <TouchableOpacity style={{ width: 120 }}>
-          {!isConnected ? (
-            <Button
-              title="Connect"
-              onPress={() => {
-                scanDevices();
-              }}
-              disabled={false}
-            />
-          ) : (
-            <Button
-              title="Disconnect"
-              onPress={() => {
-                disconnectDevice();
-              }}
-              disabled={false}
-            />
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <View style={{ paddingBottom: 20 }}></View>
-
-      {/* Monitored Temp Value */}
-      <View
-        style={{
-          justifyContent: "space-around",
-          alignItems: "flex-start",
-          flexDirection: "row",
-        }}
-      >
-        <Text
-          style={{
-            fontSize: 15,
-            fontFamily: "Cochin",
-          }}
-        >
-          {temperature == ""
-            ? "Temperature is not provided"
-            : "Current temperature: " + temperature}
-        </Text>
-      </View>
-
-      <View style={{ paddingBottom: 20 }}></View>
-
-      {/* Infestation determined */}
-      <View
-        style={{
-          justifyContent: "space-around",
-          alignItems: "center",
-          flexDirection: "column",
-        }}
-      >
-        <Text
-          style={{
-            fontSize: 15,
-            fontFamily: "Cochin",
-            fontWeight: "900",
-          }}
-        >
-          Infestation level
-        </Text>
-        <Text
-          style={{
-            fontSize: 15,
-            fontFamily: "Cochin",
-          }}
-        >
-          {infestation == true
-            ? "Your hive is infested, see our recommendation"
-            : infestation == false
-            ? "Not infested! We'll notify you to check again in 3 months"
-            : "Run analysis to see if your hive is infested"}
-        </Text>
-      </View>
-
-      <View style={{ paddingBottom: 20 }}></View>
-
-      {/* Treatment Recommended Value */}
-      <View
-        style={{
-          justifyContent: "space-around",
-          alignItems: "center",
-          flexDirection: "column",
-        }}
-      >
-        <Text
-          style={{
-            fontSize: 15,
-            fontFamily: "Cochin",
-            fontWeight: "900",
-          }}
-        >
-          {treatment == "None" ? "No treatment needed!" : "We recommend..."}
-        </Text>
-        <Text
-          style={{
-            fontSize: 15,
-            fontFamily: "Cochin",
-          }}
-        >
-          {treatment == null
-            ? "Run analysis to get a treatment"
-            : treatment == "null"
-            ? "The temperature isn't quite right, don't treat the hive for now!"
-            : treatment !== "None" && treatment}
-        </Text>
-      </View>
-
-      <View style={{ paddingBottom: 20, flexDirection: "row" }}>
-        <View>
-          <TouchableOpacity
-            style={{
-              width: "100%",
-              flexWrap: "wrap",
-              justifyContent: "center",
-              alignItems: "center",
-              gap: "10",
-              flexDirection: "row",
-            }}
+      {/* Alerts */}
+      <View>
+        {alerts.map((a: { level: string; title: string; body: string }) => (
+          <View
+            style={
+              a.level == "success"
+                ? styles.success
+                : a.level == "warning"
+                ? styles.warning
+                : a.level == "error"
+                ? styles.error
+                : styles.generalAlert
+            }
           >
-            {/* Start Analysis Button */}
-            <Button
-              title={isAnalyzing ? "Analyzing" : "Start Analysis"}
-              onPress={() => {
-                handleStartAnalysis(temperature);
-              }}
-              disabled={isAnalyzing}
-            />
-            {/* Upload Image Button */}
-            <Button
-              title="Upload Image"
-              disabled={false}
-              onPress={() => handleUploadImage()}
-            />
-            <Button
-              title="Schedule Notification"
-              onPress={async () => {
-                await schedulePushNotification("test for now", "30s from now");
-              }}
-            />
-            <Button
-              title={
-                sessionDetails.approval == "pending"
-                  ? "Approve recommended treatment"
-                  : sessionDetails.approval == "approved"
-                  ? "Treatment approved...sent to pump"
-                  : "Declined recommended treatment"
-              }
-              onPress={() => {
-                const sessionUpdate = {
-                  ...sessionDetails,
-                  approval: "approved" as ApprovalType,
-                };
-                setSessionDetails(sessionUpdate);
-                userStorage.set(sessionId, JSON.stringify(sessionUpdate));
-                if (treatment != "null") {
-                  sendTreatment(treatment);
-                }
-              }}
-              disabled={
-                sessionDetails.approval != "pending" || treatment == "null"
-              }
-            />
-            <Button
-              title="Get last notification details"
-              onPress={() => {
-                const notifIds = notificationStorage.getAllKeys();
-                const data =
-                  notifIds.length > 0
-                    ? notificationStorage.getString(notifIds[0]) || ""
-                    : "";
-                console.log("notif details from database", JSON.parse(data));
-              }}
-            />
-            <Button
-              title="Get full user database"
-              onPress={() => {
-                const userIds = userStorage.getAllKeys();
-                console.log(userIds);
-                for (const id of userIds) {
-                  const res = userStorage.getString(id);
-                  console.log("user info", id, JSON.parse(res || ""));
-                }
-              }}
-            />
-          </TouchableOpacity>
+            <Text>{a.title}</Text>
+            <Text>{a.body}</Text>
+          </View>
+        ))}
+      </View>
+      {/* Summary */}
+      <View>
+        <Text>Hive Overview</Text>
+        <Text>Last Updated: {Date.now().toString()}</Text>
+        <View>
+          <Text>Not Infested</Text>
+          <Text>implement</Text>
+        </View>
+        <View>
+          <Text>Next Mite Check</Text>
+          <Text>implement</Text>
         </View>
       </View>
-    </View>
+      {/* Buttons */}
+      <View>
+        <Button
+          onPress={() => setModalVisible(true)}
+          style={{ width: 200, marginBottom: 10 }}
+        >
+          Scan sticky board
+        </Button>
+        <Button
+          onPress={() => setTreatmentModalVisible(true)}
+          style={{ width: 250, marginBottom: 10 }}
+        >
+          Treatment Recommendation
+        </Button>
+        <Button style={{ width: 150, marginBottom: 10 }}>Hive History</Button>
+        <Button style={{ width: 150, marginBottom: 10 }}>Resources</Button>
+
+        {/* Sticky Board Modal */}
+        <Modal
+          isVisible={isModalVisible}
+          onBackdropPress={closeUploadModal}
+          onBackButtonPress={closeUploadModal}
+          onSwipeComplete={closeUploadModal}
+          swipeDirection={"down"}
+          swipeThreshold={100}
+          style={styles.modal}
+          animationIn={"slideInUp"}
+          animationOut={"slideOutDown"}
+          backdropOpacity={0.4}
+          backdropTransitionOutTiming={0}
+          hideModalContentWhileAnimating={true}
+          propagateSwipe
+        >
+          <View style={styles.sheet}>
+            {/* drag handle */}
+            <View style={styles.handle} />
+            {/* header */}
+            <Text style={styles.title}>Check your mite levels</Text>
+            <Animated.View
+              style={{
+                flex: 1,
+                transform: [{ translateX: slideAnim }],
+              }}
+            >
+              {renderStep(treatmentStep)}
+            </Animated.View>
+          </View>
+        </Modal>
+        {/* Treatment Modal */}
+        <Modal
+          isVisible={treatmentModalVisible}
+          onBackdropPress={closeTreatmentModal}
+          onBackButtonPress={closeTreatmentModal}
+          onSwipeComplete={closeTreatmentModal}
+          swipeDirection={"down"}
+          swipeThreshold={100}
+          style={styles.modal}
+          animationIn={"slideInUp"}
+          animationOut={"slideOutDown"}
+          backdropOpacity={0.4}
+          backdropTransitionOutTiming={0}
+          hideModalContentWhileAnimating={true}
+          propagateSwipe
+        >
+          <View style={styles.sheet}>
+            {/* drag handle */}
+            <View style={styles.handle} />
+            {/* header */}
+            <Text style={styles.title}>Mite Treatment</Text>
+            <Animated.View
+              style={{
+                flex: 1,
+                transform: [{ translateX: slideAnim }],
+              }}
+            >
+              {renderTreatment()}
+            </Animated.View>
+          </View>
+        </Modal>
+      </View>
+    </ScrollView>
   );
 }
-
-export default HomeScreen;
