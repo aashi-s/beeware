@@ -10,8 +10,8 @@ import {
   Linking,
   LogBox,
   PermissionsAndroid,
-  StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -21,6 +21,7 @@ import { launchImageLibrary } from "react-native-image-picker";
 import Modal from "react-native-modal";
 import uuid from "react-native-uuid";
 import { notificationStorage, userStorage } from "../../index";
+import { styles } from "../styles/styles";
 
 LogBox.ignoreLogs(["new NativeEventEmitter"]); // Ignore log notification by message
 LogBox.ignoreAllLogs(); //Ignore all log notifications
@@ -39,6 +40,7 @@ type ApprovalType = "pending" | "approved" | "declined";
 type ApplicationType = "pending" | "success" | "error" | "null";
 export default function Settings() {
   // STATES
+  const [numDays, setNumDays] = useState("1");
   const [treatmentStep, setTreatmentStep] = useState(1);
   const [imageStatus, setImageStatus] = useState("");
   const [nextStep, setNextStep] = useState<number | null>(null);
@@ -65,7 +67,7 @@ export default function Settings() {
     applied: undefined,
   });
   const [channels, setChannels] = useState<Notifications.NotificationChannel[]>(
-    []
+    [],
   );
   const [notification, setNotification] = useState<
     Notifications.Notification | undefined
@@ -75,7 +77,7 @@ export default function Settings() {
   const [isAnalyzing, setIsAnalyzing] = useState("Start Analysis"); //Is the analysis process ongoing?
   const [treatment, setTreatment] = useState<string>(""); //Treatment value returned
   const [infestation, setInfestation] = useState<boolean | undefined>(
-    undefined
+    undefined,
   ); //Infestation boolean value returned
   const [connectedDevice, setConnectedDevice] = useState<BLEDevice>(); //What device is connected?
   const [temperature, setTemperature] = useState("");
@@ -106,7 +108,7 @@ export default function Settings() {
         name: "BeeWare Channel",
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [250, 0, 250, 0],
-      }
+      },
     );
 
     const { status: existingStatus } =
@@ -144,15 +146,15 @@ export default function Settings() {
 
   useEffect(() => {
     registerForPushNotificationsAsync().then(
-      (token) => token && setExpoPushToken(token)
+      (token) => token && setExpoPushToken(token),
     );
     Notifications.getNotificationChannelsAsync().then((value) =>
-      setChannels(value ?? [])
+      setChannels(value ?? []),
     );
     const notificationListener = Notifications.addNotificationReceivedListener(
       (notification) => {
         setNotification(notification);
-      }
+      },
     );
     const responseListener =
       Notifications.addNotificationResponseReceivedListener((response) => {
@@ -168,7 +170,7 @@ export default function Settings() {
   async function schedulePushNotification(
     title: string,
     body: string,
-    seconds?: number
+    seconds?: number,
   ) {
     const content = {
       title,
@@ -193,7 +195,7 @@ export default function Settings() {
       };
       notificationStorage.set(
         notificationId,
-        JSON.stringify(notificationDetails)
+        JSON.stringify(notificationDetails),
       );
     });
   }
@@ -226,7 +228,7 @@ export default function Settings() {
           [
             { text: "Cancel", style: "cancel" },
             { text: "Open Settings", onPress: openAppNotificationSettings },
-          ]
+          ],
         );
       }
       console.log("scanning");
@@ -262,7 +264,7 @@ export default function Settings() {
         BLTManager.cancelTransaction("nightmodetransaction");
 
         BLTManager.cancelDeviceConnection(connectedDevice.id).then(() =>
-          console.log("DC completed")
+          console.log("DC completed"),
         );
       }
 
@@ -284,12 +286,12 @@ export default function Settings() {
       connectedDevice?.id,
       SERVICE_UUID,
       TREATMENT_UUID,
-      base64.encode(value)
+      base64.encode(value),
     ).then((characteristic) => {
       if (characteristic.value)
         console.log(
           "Treatment written to microcontroller: ",
-          base64.decode(characteristic.value)
+          base64.decode(characteristic.value),
         );
     });
   }
@@ -342,11 +344,11 @@ export default function Settings() {
               setTemperature(base64.decode(characteristic?.value));
               console.log(
                 "Temperature update received: ",
-                base64.decode(characteristic?.value)
+                base64.decode(characteristic?.value),
               );
             }
           },
-          "temperaturetransaction"
+          "temperaturetransaction",
         );
 
         //Treatment
@@ -358,16 +360,16 @@ export default function Settings() {
             if (characteristic?.value != null) {
               // setTreatment(StringToBool(base64.decode(characteristic?.value)));
               setTreatmentOnMicrocontroller(
-                base64.decode(characteristic?.value)
+                base64.decode(characteristic?.value),
               );
               // now that its received an update of what the microcontroller sees, it will update
               console.log(
                 "Treatment update received: ",
-                base64.decode(characteristic?.value)
+                base64.decode(characteristic?.value),
               );
             }
           },
-          "treatmenttransaction"
+          "treatmenttransaction",
         );
 
         // Console
@@ -631,6 +633,7 @@ export default function Settings() {
           temperature: temperature == "" ? "20" : temperature,
           image: encodedImage,
           overrideTreatment: "test treatment", // type in any treatment name string here, or leave it none
+          numDays: parseInt(numDays),
         }),
       });
       if (response.ok) {
@@ -669,7 +672,7 @@ export default function Settings() {
           await schedulePushNotification(
             "It's time to check your hive!",
             "Take a quick picture of your sticky board to start the process",
-            THREE_MONTHS
+            THREE_MONTHS,
           ); // 3 months in seconds
         }
         setIsAnalyzing("Analysis Completed");
@@ -684,45 +687,12 @@ export default function Settings() {
     }
   };
 
+  const handleNumberChange = (text: string) => {
+    const numericValue = text.replace(/[^0-9]/g, "");
+    setNumDays(numericValue);
+  };
+
   const { height, width } = Dimensions.get("window");
-  const styles = StyleSheet.create({
-    container: { flex: 1, justifyContent: "center", alignItems: "center" },
-    modal: { justifyContent: "flex-end", margin: 0 },
-    sheet: {
-      height: height * 0.8,
-      backgroundColor: "white",
-      borderTopLeftRadius: 20,
-      borderTopRightRadius: 20,
-      padding: 20,
-      elevation: 0,
-    },
-    handle: {
-      width: 40,
-      height: 5,
-      backgroundColor: "#ccc",
-      borderRadius: 3,
-      alignSelf: "center",
-      marginBottom: 15,
-    },
-    title: {
-      fontSize: 18,
-      fontWeight: "600",
-      marginBottom: 10,
-    },
-    button: {
-      backgroundColor: "#4caf50",
-      padding: 12,
-      borderRadius: 8,
-      alignItems: "center",
-      marginTop: 15,
-      color: "white",
-    },
-    buttonText: {
-      color: "white",
-      fontWeight: "600",
-      textAlign: "center",
-    },
-  });
 
   return (
     <View>
@@ -827,8 +797,8 @@ export default function Settings() {
           {infestation == true
             ? "Your hive is infested, see our recommendation"
             : infestation == false
-            ? "Not infested! We'll notify you to check again in 3 months"
-            : "Run analysis to see if your hive is infested"}
+              ? "Not infested! We'll notify you to check again in 3 months"
+              : "Run analysis to see if your hive is infested"}
         </Text>
       </View>
 
@@ -860,12 +830,17 @@ export default function Settings() {
           {treatment == null
             ? "Run analysis to get a treatment"
             : treatment == "null"
-            ? "The temperature isn't quite right, don't treat the hive for now!"
-            : treatment !== "None" && treatment}
+              ? "The temperature isn't quite right, don't treat the hive for now!"
+              : treatment !== "None" && treatment}
         </Text>
       </View>
 
       <View style={{ paddingBottom: 20, flexDirection: "row" }}>
+        <TextInput
+          onChangeText={handleNumberChange}
+          value={numDays}
+          keyboardType="numeric"
+        />
         {/* buttons */}
         <View>
           <Button

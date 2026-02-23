@@ -1,0 +1,142 @@
+import { Dimensions, Platform, StyleSheet } from "react-native";
+const { height } = Dimensions.get("window");
+
+export const COLOURS = {
+  light: "#FAFAFA",
+  textLight: "#E6E2DD",
+  textDark: "#32302D",
+  tertiary: "#FFD56A",
+  colour3: "#DE721B",
+  colour4: "#1F1600",
+  darkGrey: "#655F5F",
+};
+// TODO: split this by page
+export const styles = StyleSheet.create({
+  page: {
+    flex: 1,
+    paddingBlock: 60,
+    paddingHorizontal: 24,
+    fontFamily: Platform.select({ android: "Roboto_400Regular" }),
+    fontSize: 14,
+    lineHeight: 16,
+    backgroundColor: COLOURS.light,
+    color: COLOURS.textDark,
+  },
+  h1: {
+    fontFamily: Platform.select({ android: "Roboto_800ExtraBold" }),
+    fontSize: 24,
+  },
+  h2: {
+    fontFamily: Platform.select({ android: "Roboto_800ExtraBold" }),
+    fontSize: 16,
+  },
+  subtitle: {
+    fontFamily: Platform.select({ android: "Roboto_400Regular" }),
+    fontSize: 14,
+    lineHeight: 16,
+    color: COLOURS.darkGrey,
+  },
+  buttonText: {
+    fontFamily: Platform.select({ android: "Roboto_600SemiBold" }),
+    fontSize: 16,
+  },
+  container: { flex: 1, justifyContent: "center", alignItems: "center" },
+  modal: { justifyContent: "flex-end", margin: 0 },
+  sheet: {
+    height: height * 0.8,
+    backgroundColor: "white",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    elevation: 0,
+  },
+  handle: {
+    width: 40,
+    height: 5,
+    backgroundColor: "#ccc",
+    borderRadius: 3,
+    alignSelf: "center",
+    marginBottom: 15,
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: "600",
+    marginBottom: 10,
+  },
+  button: {
+    backgroundColor: "#4caf50",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 15,
+    color: "white",
+  },
+  success: { backgroundColor: "#E7F4E8" },
+  warning: { backgroundColor: "#FFF4E4" },
+  error: { backgroundColor: "#FFE2E5" },
+  generalAlert: { backgroundColor: "#EAF2FF" },
+  alert: {
+    padding: 16,
+    flexDirection: "row",
+    gap: 16,
+    borderRadius: 16,
+    marginTop: 20,
+    alignItems: "center",
+  },
+  overviewInfo: {
+    backgroundColor: "rgba(255,255,255,0.6)",
+    borderRadius: 12,
+    gap: 5,
+    paddingHorizontal: 15,
+    paddingBlock: 12,
+    width: "48%",
+  },
+  modalButton: {
+    borderRadius: 12,
+    backgroundColor: "#DE721B",
+    color: "white",
+    paddingHorizontal: 10,
+    paddingBlock: 7,
+  },
+
+  preview: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  image: { width: "100%", height: "100%", resizeMode: "cover" },
+  placeholder: {
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+    height: "100%",
+  },
+
+  actions: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
+    marginBottom: 30,
+  },
+  captureButton: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: "#fff",
+    borderWidth: 2,
+    borderColor: "#888",
+  },
+  iconButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f2f2f2",
+  },
+});

@@ -1,4 +1,4 @@
-import { Button } from "@expo/ui/jetpack-compose";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import * as TaskManager from "expo-task-manager";
@@ -7,11 +7,11 @@ import {
   Alert,
   Animated,
   Dimensions,
+  Image,
   Linking,
   LogBox,
   PermissionsAndroid,
   ScrollView,
-  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -22,6 +22,11 @@ import { launchImageLibrary } from "react-native-image-picker";
 import Modal from "react-native-modal";
 import uuid from "react-native-uuid";
 import { notificationStorage, userStorage } from "../../index";
+import ActionButton from "../components/ActionButton";
+import AlertBanner from "../components/AlertBanner";
+import CircularProgress from "../components/CircularProgress";
+import LoadingScreen from "../components/LoadingScreen";
+import { COLOURS, styles } from "../styles/styles";
 
 LogBox.ignoreLogs(["new NativeEventEmitter"]); // Ignore log notification by message
 LogBox.ignoreAllLogs(); //Ignore all log notifications
@@ -38,12 +43,35 @@ Notifications.setNotificationHandler({
 // TYPES
 type ApprovalType = "pending" | "approved" | "declined";
 type ApplicationType = "pending" | "success" | "error" | "null";
+type AlertType =
+  | "treatmentComplete"
+  | "checkComplete"
+  | "infestationDetected"
+  | "checkLevels"
+  | "checkIncomplete"
+  | "treatmentUnavailable"
+  | "treatmentFailed"
+  | "connectionError"
+  | "analysisFailed"
+  | "recommendationAvailable";
 export default function Index() {
   // STATES
-  const [treatmentStep, setTreatmentStep] = useState(1);
-  const [alerts, setAlerts] = useState<
-    { level: string; title: string; body: string }[]
-  >([{ level: "warning", title: "testtitle", body: "testbody" }]);
+  const [lastUpdated, setLastUpdated] = useState(
+    new Date()
+      .toLocaleString("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      })
+      .replace(",", ""),
+  );
+  const [nextCheck, setNextCheck] = useState(-1);
+  const [lastInfested, setLastInfested] = useState(0);
+  const [numDays, setNumDays] = useState("1");
+  const [treatmentStep, setTreatmentStep] = useState(0);
+  const [alerts, setAlerts] = useState<AlertType[]>([]);
   const [imageStatus, setImageStatus] = useState("");
   const [nextStep, setNextStep] = useState<number | null>(null);
   const [isModalVisible, setModalVisible] = useState(false);
@@ -69,7 +97,7 @@ export default function Index() {
     applied: undefined,
   });
   const [channels, setChannels] = useState<Notifications.NotificationChannel[]>(
-    []
+    [],
   );
   const [notification, setNotification] = useState<
     Notifications.Notification | undefined
@@ -77,9 +105,9 @@ export default function Index() {
   const [sessionId, setSessionId] = useState("");
   const [isConnected, setIsConnected] = useState(false); //Is a device connected?
   const [isAnalyzing, setIsAnalyzing] = useState("Start Analysis"); //Is the analysis process ongoing?
-  const [treatment, setTreatment] = useState<string>(""); //Treatment value returned
+  const [treatment, setTreatment] = useState<string>("error"); //Treatment value returned
   const [infestation, setInfestation] = useState<boolean | undefined>(
-    undefined
+    undefined,
   ); //Infestation boolean value returned
   const [connectedDevice, setConnectedDevice] = useState<BLEDevice>(); //What device is connected?
   const [temperature, setTemperature] = useState("");
@@ -110,7 +138,7 @@ export default function Index() {
         name: "BeeWare Channel",
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [250, 0, 250, 0],
-      }
+      },
     );
 
     const { status: existingStatus } =
@@ -148,15 +176,15 @@ export default function Index() {
 
   useEffect(() => {
     registerForPushNotificationsAsync().then(
-      (token) => token && setExpoPushToken(token)
+      (token) => token && setExpoPushToken(token),
     );
     Notifications.getNotificationChannelsAsync().then((value) =>
-      setChannels(value ?? [])
+      setChannels(value ?? []),
     );
     const notificationListener = Notifications.addNotificationReceivedListener(
       (notification) => {
         setNotification(notification);
-      }
+      },
     );
     const responseListener =
       Notifications.addNotificationResponseReceivedListener((response) => {
@@ -172,7 +200,7 @@ export default function Index() {
   async function schedulePushNotification(
     title: string,
     body: string,
-    seconds?: number
+    seconds?: number,
   ) {
     const content = {
       title,
@@ -197,7 +225,7 @@ export default function Index() {
       };
       notificationStorage.set(
         notificationId,
-        JSON.stringify(notificationDetails)
+        JSON.stringify(notificationDetails),
       );
     });
   }
@@ -230,7 +258,7 @@ export default function Index() {
           [
             { text: "Cancel", style: "cancel" },
             { text: "Open Settings", onPress: openAppNotificationSettings },
-          ]
+          ],
         );
       }
       console.log("scanning");
@@ -266,7 +294,7 @@ export default function Index() {
         BLTManager.cancelTransaction("nightmodetransaction");
 
         BLTManager.cancelDeviceConnection(connectedDevice.id).then(() =>
-          console.log("DC completed")
+          console.log("DC completed"),
         );
       }
 
@@ -288,12 +316,12 @@ export default function Index() {
       connectedDevice?.id,
       SERVICE_UUID,
       TREATMENT_UUID,
-      base64.encode(value)
+      base64.encode(value),
     ).then((characteristic) => {
       if (characteristic.value)
         console.log(
           "Treatment written to microcontroller: ",
-          base64.decode(characteristic.value)
+          base64.decode(characteristic.value),
         );
     });
   }
@@ -346,11 +374,11 @@ export default function Index() {
               setTemperature(base64.decode(characteristic?.value));
               console.log(
                 "Temperature update received: ",
-                base64.decode(characteristic?.value)
+                base64.decode(characteristic?.value),
               );
             }
           },
-          "temperaturetransaction"
+          "temperaturetransaction",
         );
 
         //Treatment
@@ -362,16 +390,16 @@ export default function Index() {
             if (characteristic?.value != null) {
               // setTreatment(StringToBool(base64.decode(characteristic?.value)));
               setTreatmentOnMicrocontroller(
-                base64.decode(characteristic?.value)
+                base64.decode(characteristic?.value),
               );
               // now that its received an update of what the microcontroller sees, it will update
               console.log(
                 "Treatment update received: ",
-                base64.decode(characteristic?.value)
+                base64.decode(characteristic?.value),
               );
             }
           },
-          "treatmenttransaction"
+          "treatmenttransaction",
         );
 
         // Console
@@ -395,7 +423,7 @@ export default function Index() {
 
   const closeUploadModal = () => {
     setModalVisible(false);
-    setTreatmentStep(1);
+    setTreatmentStep(0);
     slideAnim.setValue(0);
     setImageStatus("");
     setIsAnalyzing("Start Analysis");
@@ -428,81 +456,274 @@ export default function Index() {
 
   const renderStep = (step: number) => {
     switch (step) {
-      case 1:
+      case 0:
         return (
-          <>
-            <Text>
-              This check helps you understand whether your hive has a Varroa
-              mite infestation.
+          <View style={{ gap: 24 }}>
+            <Text style={styles.subtitle}>
+              This page shows current hive infestation status and when your next
+              mite check is required.
             </Text>
-            <Text>Before you start</Text>
-            <Text>
-              When you're ready, go to your hive to start the mite check
-            </Text>
-            <Text>For best results, complete this check with daylight</Text>
-            <TouchableOpacity
-              style={styles.button}
-              onPress={() => getNextStep(2)}
+            <View
+              style={{
+                borderRadius: 12,
+                gap: 8,
+                backgroundColor: "#FFEEC3",
+                padding: 20,
+                marginBlock: 8,
+              }}
             >
-              <Text style={styles.buttonText}>Start check</Text>
-            </TouchableOpacity>
-            <Text onPress={closeUploadModal}>Skip tutorial</Text>
-          </>
-        );
-      case 2:
-        return (
-          <>
-            <Text>Instructions</Text>
-            <Text>
-              Slide out the bottom board holding the sticky board , keeping it
-              flat and steady
-            </Text>
-            <Text>Disturbing the surface may affect mite counts</Text>
-            <TouchableOpacity
-              style={styles.button}
-              onPress={() => getNextStep(3)}
+              <View style={{ flexDirection: "row" }}>
+                <MaterialCommunityIcons name="calendar" size={22} />
+                <Text style={{ marginHorizontal: 20 }}>Next Mite Check</Text>
+                <Text style={{ color: nextCheck < 0 ? "#FF616D" : "black" }}>
+                  {Math.abs(nextCheck)}
+                </Text>
+                <Text style={{ color: nextCheck < 0 ? "#FF616D" : "black" }}>
+                  {nextCheck < 0
+                    ? `${nextCheck == -1 ? " day" : " days"} overdue`
+                    : nextCheck == 1
+                      ? "day"
+                      : "days"}
+                </Text>
+              </View>
+              <Text style={styles.subtitle}>
+                It’s time to check your hive’s mite levels. Scan your sticky
+                board now.
+              </Text>
+            </View>
+            <Text>From Last Mite Check:</Text>
+            <View
+              style={{
+                flexDirection: "row",
+                marginBottom: 50,
+                justifyContent: "space-between",
+                gap: 16,
+              }}
             >
-              <Text style={styles.buttonText}>Continue</Text>
-            </TouchableOpacity>
-          </>
-        );
-      case 3:
-        return (
-          <>
-            <Text>Instructions</Text>
-            <Text>Take a photo of your hive's sticky board</Text>
-            <TouchableOpacity
-              style={styles.button}
-              onPress={() => handleUploadImage()}
+              <CircularProgress
+                size={80}
+                strokeWidth={10}
+                progress={75} // 75% filled
+                text={"> 12"}
+                color="#FF4C4C"
+                backgroundColor="#F0F0F0"
+                duration={1500} // animation duration
+              />
+
+              <View>
+                <View style={{ flexDirection: "row" }}>
+                  <Text>Status: </Text>
+                  <Text style={{ color: "#FF616D" }}>Infested</Text>
+                </View>
+                <Text style={styles.subtitle}>
+                  Mite levels are above the threshold, treatment is advised.
+                </Text>
+                <Text style={{ color: "#949494" }}>
+                  As of May 12 sticky board
+                </Text>
+              </View>
+            </View>
+            {/* Buttons */}
+            <View
+              style={{
+                flexDirection: "row",
+                gap: 12,
+                justifyContent: "space-between",
+              }}
             >
-              <Text style={styles.buttonText}>Upload Image</Text>
-            </TouchableOpacity>
-            {imageStatus != "" && (
-              <>
-                <Text>{imageStatus}</Text>
-                <TouchableOpacity
-                  style={styles.button}
-                  onPress={() => {
-                    handleStartAnalysis(temperature);
-                  }}
-                  disabled={isAnalyzing != "Start Analysis"}
-                >
-                  <Text style={styles.buttonText}>{isAnalyzing}</Text>
-                </TouchableOpacity>
-              </>
-            )}
-            {isAnalyzing == "Analysis Completed" && (
               <TouchableOpacity
-                style={styles.button}
+                style={styles.modalButton}
+                onPress={() => getNextStep(1)}
+              >
+                <Text style={[styles.modalButton, styles.buttonText]}>
+                  Scan Sticky Board
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton]}
                 onPress={() => {
                   closeUploadModal();
                   setTreatmentModalVisible(true);
                 }}
               >
-                <Text style={styles.buttonText}>Go to treatment modal</Text>
+                <Text style={[styles.modalButton, styles.buttonText]}>
+                  View Treatment
+                </Text>
               </TouchableOpacity>
-            )}
-          </>
+            </View>
+          </View>
+        );
+      case 1:
+        return (
+          <View style={{ gap: 24 }}>
+            <Text
+              style={{
+                borderTopColor: "#D8EAE9",
+                borderTopWidth: 1,
+                borderBottomColor: "#D8EAE9",
+                borderBottomWidth: 1,
+                paddingBlock: 10,
+              }}
+            >
+              Before you start
+            </Text>
+            <Text>
+              When you're ready, go to your hive tostart the mite check
+            </Text>
+            <Image
+              source={require("../../assets/scanInfo1.png")}
+              style={{ alignSelf: "center" }}
+            />
+            <Text>For best results, complete this check with daylight.</Text>
+            <View
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 24,
+              }}
+            >
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={() => getNextStep(2)}
+              >
+                <Text style={[styles.modalButton, styles.buttonText]}>
+                  Scan Sticky Board
+                </Text>
+              </TouchableOpacity>
+              <Text
+                style={{ color: "#72737b", alignSelf: "center" }}
+                onPress={closeUploadModal}
+              >
+                Skip tutorial
+              </Text>
+            </View>
+          </View>
+        );
+      case 2:
+        return (
+          <View style={{ gap: 24 }}>
+            <Text
+              style={{
+                borderTopColor: "#D8EAE9",
+                borderTopWidth: 1,
+                borderBottomColor: "#D8EAE9",
+                borderBottomWidth: 1,
+                paddingBlock: 10,
+              }}
+            >
+              Instructions
+            </Text>
+            <Text>
+              Slide out the bottom board holding the sticky board, keeping it
+              flat and steady.
+            </Text>
+            <Image
+              source={require("../../assets/scanInfo2.png")}
+              style={{ alignSelf: "center" }}
+            />
+            <Text>Disturbing the surface may affect mite counts</Text>
+            <View
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 24,
+              }}
+            >
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={() => getNextStep(3)}
+              >
+                <Text style={[styles.modalButton, styles.buttonText]}>
+                  Continue
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      case 3:
+        return (
+          <View style={{ gap: 24 }}>
+            <Text
+              style={{
+                borderTopColor: "#D8EAE9",
+                borderTopWidth: 1,
+                borderBottomColor: "#D8EAE9",
+                borderBottomWidth: 1,
+                paddingBlock: 10,
+              }}
+            >
+              Instructions
+            </Text>
+            <Text>Take a photo of your hive’s sticky board.</Text>
+            <Image
+              source={require("../../assets/scanInfo3.png")}
+              style={{ alignSelf: "center" }}
+            />
+            <Text>
+              Ensure the board is fully visible, well lit, and free of glare or
+              obstructions.
+            </Text>
+            <View
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 24,
+              }}
+            >
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={() => getNextStep(4)}
+              >
+                <Text style={[styles.modalButton, styles.buttonText]}>
+                  Capture
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      case 4:
+        return (
+          <View style={{ gap: 24 }}>
+            <Text
+              style={{
+                borderTopColor: "#D8EAE9",
+                borderTopWidth: 1,
+                borderBottomColor: "#D8EAE9",
+                borderBottomWidth: 1,
+                paddingBlock: 10,
+              }}
+            >
+              Ensure photo is clear with bright lighting
+            </Text>
+            <TouchableOpacity
+              style={[styles.modalButton]}
+              onPress={() => handleUploadImage()}
+            >
+              <Text style={[styles.modalButton, styles.buttonText]}>
+                Upload Picture
+              </Text>
+            </TouchableOpacity>
+          </View>
+        );
+      case 5:
+        return (
+          <View style={{ gap: 24 }}>
+            <Text
+              style={{
+                borderTopColor: "#D8EAE9",
+                borderTopWidth: 1,
+                borderBottomColor: "#D8EAE9",
+                borderBottomWidth: 1,
+                paddingBlock: 10,
+              }}
+            >
+              Checking sticky board
+            </Text>
+            <LoadingScreen />
+          </View>
         );
       default:
         return null;
@@ -511,65 +732,235 @@ export default function Index() {
 
   const renderTreatment = () => {
     switch (treatment) {
+      case "":
+        return <></>;
       case "None":
         return (
-          <>
-            <Text>Treatment Not Recommended</Text>
-            <Text>
-              Based on your mite check from January 12, no infestation is
-              detected and treatment is not necessary
+          <View style={{ gap: 24 }}>
+            <Text
+              style={{
+                borderTopColor: "#D8EAE9",
+                borderTopWidth: 1,
+                borderBottomColor: "#D8EAE9",
+                borderBottomWidth: 1,
+                paddingBlock: 10,
+                fontWeight: 600,
+              }}
+            >
+              Treatment{" "}
+              <Text style={{ color: COLOURS.colour3, fontWeight: "bold" }}>
+                Not Recommended
+              </Text>
             </Text>
-            <TouchableOpacity
-              style={styles.button}
-              onPress={() => closeTreatmentModal}
-            >
-              <Text style={styles.buttonText}>Close</Text>
-            </TouchableOpacity>
-          </>
+            <View style={{ justifyContent: "space-between", height: "80%" }}>
+              <Text>
+                Based on your mite check from January 12, no infestation is
+                detected and treatment is not necessary
+              </Text>
+              <Image
+                source={require("../../assets/treatInfo.png")}
+                style={{ alignSelf: "center" }}
+              />
+              <View
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 24,
+                }}
+              >
+                <TouchableOpacity
+                  style={[
+                    styles.modalButton,
+                    { backgroundColor: COLOURS.darkGrey },
+                  ]}
+                  onPress={closeTreatmentModal}
+                >
+                  <Text
+                    style={[
+                      styles.modalButton,
+                      styles.buttonText,
+                      { backgroundColor: COLOURS.darkGrey },
+                    ]}
+                  >
+                    Close
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
         );
-      case "null":
+      case "null": // delayed treatment
         return (
-          <>
-            <Text>Recommended Treatment: Oxalic Acid</Text>
-            <Text>Alert Component (need to fix this)</Text>
-            <TouchableOpacity
-              style={styles.button}
-              onPress={() => closeTreatmentModal}
+          <View style={{ gap: 24 }}>
+            <Text
+              style={{
+                borderTopColor: "#D8EAE9",
+                borderTopWidth: 1,
+                borderBottomColor: "#D8EAE9",
+                borderBottomWidth: 1,
+                paddingBlock: 10,
+                fontWeight: 600,
+              }}
             >
-              <Text style={styles.buttonText}>Close</Text>
-            </TouchableOpacity>
-          </>
+              Recommended Treatment{" "}
+              <Text style={{ color: COLOURS.colour3, fontWeight: "bold" }}>
+                Oxalic Acid
+              </Text>
+            </Text>
+            <View style={{ justifyContent: "space-between", height: "80%" }}>
+              <AlertBanner alertType="treatmentUnavailable" />
+              <Image
+                source={require("../../assets/treatInfo.png")}
+                style={{ alignSelf: "center" }}
+              />
+              <View
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 24,
+                }}
+              >
+                <TouchableOpacity
+                  style={[
+                    styles.modalButton,
+                    { backgroundColor: COLOURS.darkGrey },
+                  ]}
+                  onPress={closeTreatmentModal}
+                >
+                  <Text
+                    style={[
+                      styles.modalButton,
+                      styles.buttonText,
+                      { backgroundColor: COLOURS.darkGrey },
+                    ]}
+                  >
+                    Close
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
         );
       case "success":
         return (
-          <>
-            <Text>{treatment}: Applied</Text>
-            <Text>
-              The recommended treatment has been applied on Jan 12 at 11:59pm.
-              You can view it in your hive history.
-            </Text>
-            <TouchableOpacity
-              style={styles.button}
-              onPress={() => closeTreatmentModal}
+          <View style={{ gap: 24 }}>
+            <Text
+              style={{
+                borderTopColor: "#D8EAE9",
+                borderTopWidth: 1,
+                borderBottomColor: "#D8EAE9",
+                borderBottomWidth: 1,
+                paddingBlock: 10,
+                fontWeight: 600,
+              }}
             >
-              <Text style={styles.buttonText}>Close</Text>
-            </TouchableOpacity>
-          </>
+              {"Oxalic Acid"}
+              <Text style={{ color: COLOURS.colour3, fontWeight: "bold" }}>
+                {" "}
+                Treatment Applied
+              </Text>
+            </Text>
+            <View style={{ justifyContent: "space-between", height: "80%" }}>
+              <Text>
+                The recommended treatment has been applied on Jan 12 at 11:59pm.
+                You can view it in your hive history.{" "}
+              </Text>
+              <MaterialCommunityIcons
+                name="check-circle"
+                size={150}
+                color="#37c09e"
+                style={{ alignSelf: "center" }}
+              />
+
+              <View
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 24,
+                }}
+              >
+                <TouchableOpacity
+                  style={[
+                    styles.modalButton,
+                    { backgroundColor: COLOURS.darkGrey },
+                  ]}
+                  onPress={closeTreatmentModal}
+                >
+                  <Text
+                    style={[
+                      styles.modalButton,
+                      styles.buttonText,
+                      { backgroundColor: COLOURS.darkGrey },
+                    ]}
+                  >
+                    Close
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
         );
       case "error":
         return (
-          <>
-            <Text>{treatment}: Treatment Application Failed</Text>
-            <Text>
-              The recommended treatment has not been applied due to an error.
-            </Text>
-            <TouchableOpacity
-              style={styles.button}
-              onPress={() => closeTreatmentModal}
+          <View style={{ gap: 24 }}>
+            <Text
+              style={{
+                borderTopColor: "#D8EAE9",
+                borderTopWidth: 1,
+                borderBottomColor: "#D8EAE9",
+                borderBottomWidth: 1,
+                paddingBlock: 10,
+                fontWeight: 600,
+              }}
             >
-              <Text style={styles.buttonText}>Close</Text>
-            </TouchableOpacity>
-          </>
+              {"Oxalic Acid"}
+              <Text style={{ color: COLOURS.colour3, fontWeight: "bold" }}>
+                {" "}
+                Treatment Application Failed
+              </Text>
+            </Text>
+            <View style={{ justifyContent: "space-between", height: "80%" }}>
+              <Text>
+                The recommended treatment has not been applied due to an error.
+              </Text>
+              <MaterialCommunityIcons
+                name="close-circle"
+                size={150}
+                color="#ff626d"
+                style={{ alignSelf: "center" }}
+              />
+
+              <View
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 24,
+                }}
+              >
+                <TouchableOpacity
+                  style={[
+                    styles.modalButton,
+                    { backgroundColor: COLOURS.darkGrey },
+                  ]}
+                  onPress={closeTreatmentModal}
+                >
+                  <Text
+                    style={[
+                      styles.modalButton,
+                      styles.buttonText,
+                      { backgroundColor: COLOURS.darkGrey },
+                    ]}
+                  >
+                    Close
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
         );
       // if there is a treatment
       default:
@@ -620,6 +1011,7 @@ export default function Index() {
       const source = result.assets![0]; //Unwrap the result assets and grab the first item (the captured image)
       setEncodedImage(`data:${source.type};base64,${source.base64}`);
       setImageStatus("Uploaded Image Successfully");
+      getNextStep(5);
     }
   };
 
@@ -635,6 +1027,7 @@ export default function Index() {
           temperature: temperature == "" ? "20" : temperature,
           image: encodedImage,
           overrideTreatment: "test treatment", // type in any treatment name string here, or leave it none
+          numDays: numDays,
         }),
       });
       if (response.ok) {
@@ -673,7 +1066,7 @@ export default function Index() {
           await schedulePushNotification(
             "It's time to check your hive!",
             "Take a quick picture of your sticky board to start the process",
-            THREE_MONTHS
+            THREE_MONTHS,
           ); // 3 months in seconds
         }
         setIsAnalyzing("Analysis Completed");
@@ -688,49 +1081,7 @@ export default function Index() {
     }
   };
 
-  const { height, width } = Dimensions.get("window");
-  const styles = StyleSheet.create({
-    container: { flex: 1, justifyContent: "center", alignItems: "center" },
-    modal: { justifyContent: "flex-end", margin: 0 },
-    sheet: {
-      height: height * 0.8,
-      backgroundColor: "white",
-      borderTopLeftRadius: 20,
-      borderTopRightRadius: 20,
-      padding: 20,
-      elevation: 0,
-    },
-    handle: {
-      width: 40,
-      height: 5,
-      backgroundColor: "#ccc",
-      borderRadius: 3,
-      alignSelf: "center",
-      marginBottom: 15,
-    },
-    title: {
-      fontSize: 18,
-      fontWeight: "600",
-      marginBottom: 10,
-    },
-    button: {
-      backgroundColor: "#4caf50",
-      padding: 12,
-      borderRadius: 8,
-      alignItems: "center",
-      marginTop: 15,
-      color: "white",
-    },
-    buttonText: {
-      color: "white",
-      fontWeight: "600",
-      textAlign: "center",
-    },
-    success: { backgroundColor: "#E7F4E8" },
-    warning: { backgroundColor: "#FFF4E4" },
-    error: { backgroundColor: "#FFE2E5" },
-    generalAlert: { backgroundColor: "#EAF2FF" },
-  });
+  const { width } = Dimensions.get("window");
 
   const getTimeOfDay = () => {
     const now = new Date();
@@ -745,60 +1096,100 @@ export default function Index() {
   };
 
   return (
-    <ScrollView>
+    <ScrollView
+      style={styles.page}
+      contentContainerStyle={{ paddingBottom: 50 }}
+    >
       {/* Greeting */}
-      <View>
-        <Text>Good {getTimeOfDay()},</Text>
-        <Text>Implement Name</Text>
+      <View
+        style={{
+          gap: 10,
+          paddingHorizontal: 8,
+          paddingBlock: 16,
+        }}
+      >
+        <Text style={{ fontSize: 16 }}>Good {getTimeOfDay()},</Text>
+        <Text style={styles.h1}>Aashi</Text>
       </View>
       {/* Alerts */}
       <View>
-        {alerts.map((a: { level: string; title: string; body: string }) => (
-          <View
-            style={
-              a.level == "success"
-                ? styles.success
-                : a.level == "warning"
-                ? styles.warning
-                : a.level == "error"
-                ? styles.error
-                : styles.generalAlert
-            }
-          >
-            <Text>{a.title}</Text>
-            <Text>{a.body}</Text>
-          </View>
+        {alerts.map((a) => (
+          <AlertBanner alertType={a} />
         ))}
       </View>
       {/* Summary */}
-      <View>
-        <Text>Hive Overview</Text>
-        <Text>Last Updated: {Date.now().toString()}</Text>
-        <View>
-          <Text>Not Infested</Text>
-          <Text>implement</Text>
-        </View>
-        <View>
-          <Text>Next Mite Check</Text>
-          <Text>implement</Text>
+      <View
+        style={{
+          backgroundColor: COLOURS.tertiary,
+          borderRadius: 12,
+          paddingHorizontal: 16,
+          paddingBlock: 20,
+          marginTop: 20,
+          gap: 5,
+        }}
+      >
+        <Text style={styles.h2}>Hive Overview</Text>
+        <Text style={styles.subtitle}>Last Updated: {lastUpdated}</Text>
+        <View
+          style={{
+            marginTop: 21,
+            flexDirection: "row",
+            gap: 8,
+            justifyContent: "space-between",
+          }}
+        >
+          <View style={styles.overviewInfo}>
+            <View
+              style={{ flexDirection: "row", gap: 8, alignItems: "baseline" }}
+            >
+              <Ionicons name="bug-outline" />
+              <Text>Not Infested</Text>
+            </View>
+            <View
+              style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}
+            >
+              <Text style={styles.h1}>{lastInfested}</Text>
+              <Text>{lastInfested == 1 ? "day" : "days"} ago</Text>
+            </View>
+          </View>
+          <View style={styles.overviewInfo}>
+            <View
+              style={{ flexDirection: "row", gap: 8, alignItems: "baseline" }}
+            >
+              <MaterialCommunityIcons name="calendar" />
+              <Text>Next Mite Check</Text>
+            </View>
+            <View
+              style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}
+            >
+              <Text style={styles.h1}>{Math.abs(nextCheck)}</Text>
+              <Text>
+                {nextCheck < 0
+                  ? `${nextCheck == -1 ? "day" : "days"} overdue`
+                  : nextCheck == 1
+                    ? "day"
+                    : "days"}
+              </Text>
+            </View>
+          </View>
         </View>
       </View>
       {/* Buttons */}
-      <View>
-        <Button
-          onPress={() => setModalVisible(true)}
-          style={{ width: 200, marginBottom: 10 }}
-        >
-          Scan sticky board
-        </Button>
-        <Button
-          onPress={() => setTreatmentModalVisible(true)}
-          style={{ width: 250, marginBottom: 10 }}
-        >
-          Treatment Recommendation
-        </Button>
-        <Button style={{ width: 150, marginBottom: 10 }}>Hive History</Button>
-        <Button style={{ width: 150, marginBottom: 10 }}>Resources</Button>
+      <View style={{ marginBlock: 20, width: "100%", gap: 10 }}>
+        <ActionButton
+          text="Check Infestation Status"
+          onPressFunction={() => setModalVisible(true)}
+        />
+        <ActionButton
+          text="Treatment Recommendation"
+          onPressFunction={() => setTreatmentModalVisible(true)}
+          unread
+        />
+        <ActionButton
+          text="Treatment Management"
+          onPressFunction={() => null}
+        />
+        <ActionButton text="Resources" onPressFunction={() => null} />
 
         {/* Sticky Board Modal */}
         <Modal
@@ -820,7 +1211,10 @@ export default function Index() {
             {/* drag handle */}
             <View style={styles.handle} />
             {/* header */}
-            <Text style={styles.title}>Check your mite levels</Text>
+            <Text style={styles.title}>
+              {treatmentStep == 0 ? "Infestation Status" : "Scan Sticky Board"}
+            </Text>
+
             <Animated.View
               style={{
                 flex: 1,

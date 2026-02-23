@@ -49,6 +49,7 @@ class RequestBody(BaseModel):
     temperature: str | None
     image: str
     overrideTreatment: str | None
+    numDays: int | None
 
 
 @app.get("/")
@@ -61,5 +62,5 @@ async def chat(
     query: RequestBody = Body(...),
 ):
     return varroa_detector.select_folder(
-        query.temperature, query.image, query.overrideTreatment
+        query.temperature, query.image, query.overrideTreatment, query.numDays
     )
