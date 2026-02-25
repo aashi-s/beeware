@@ -136,7 +136,6 @@ export default function Settings() {
           projectId,
         })
       ).data;
-      console.log("token is", token); //ExponentPushToken[7csFM6L1BmTvSUz3ytH-5j]
     } catch (e) {
       token = `${e}`;
     }

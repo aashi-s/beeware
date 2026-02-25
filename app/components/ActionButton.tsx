@@ -6,23 +6,58 @@ const ActionButton = ({
   text,
   onPressFunction,
   unread,
+  disabled,
 }: {
   text: string;
   onPressFunction: () => void;
   unread?: boolean;
+  disabled?: boolean;
 }) => {
   const getIcon = (text: string) => {
     switch (text) {
       case "Check Infestation Status":
-        return <MaterialCommunityIcons name="scan-helper" size={26} />;
+        return (
+          <MaterialCommunityIcons
+            name="scan-helper"
+            size={26}
+            color={disabled ? "#8b8b8b" : "#000"}
+          />
+        );
       case "Treatment Recommendation":
-        return <MaterialCommunityIcons name="sprinkler-fire" size={26} />;
+        return (
+          <MaterialCommunityIcons
+            name="sprinkler-fire"
+            size={26}
+            color={disabled ? "#8b8b8b" : "#000"}
+          />
+        );
       case "Treatment Management":
-        return <MaterialCommunityIcons name="content-copy" size={26} />;
+        return (
+          <MaterialCommunityIcons
+            name="content-copy"
+            size={26}
+            color={disabled ? "#8b8b8b" : "#000"}
+          />
+        );
+      case "Resources":
+        return (
+          <MaterialCommunityIcons
+            name="exit-to-app"
+            size={26}
+            color={disabled ? "#8b8b8b" : "#000"}
+          />
+        );
       default:
-        return <MaterialCommunityIcons name="exit-to-app" size={26} />;
+        return (
+          <MaterialCommunityIcons
+            name="lock-reset"
+            size={26}
+            color={disabled ? "#8b8b8b" : "#000"}
+          />
+        );
     }
   };
+
   return (
     <TouchableOpacity
       style={{
@@ -31,14 +66,17 @@ const ActionButton = ({
         paddingBlock: 24,
         borderRadius: 12,
         justifyContent: "flex-end",
-        backgroundColor: "white",
+        backgroundColor: disabled ? "#e0e0e0" : "white",
         boxShadow: "1px 4px 4px 0px rgba(0, 0, 0, 0.05)",
       }}
       onPress={onPressFunction}
+      disabled={disabled}
     >
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
         {getIcon(text)}
-        <Text style={styles.buttonText}>{text}</Text>
+        <Text style={[styles.buttonText, disabled && { color: "#8b8b8b" }]}>
+          {text}
+        </Text>
       </View>
       {/* unread */}
       {unread && (

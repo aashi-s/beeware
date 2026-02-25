@@ -38,12 +38,12 @@ export const styles = StyleSheet.create({
   },
   buttonText: {
     fontFamily: Platform.select({ android: "Roboto_600SemiBold" }),
-    fontSize: 16,
+    fontSize: 14,
   },
   container: { flex: 1, justifyContent: "center", alignItems: "center" },
   modal: { justifyContent: "flex-end", margin: 0 },
   sheet: {
-    height: height * 0.8,
+    height: height * 0.91,
     backgroundColor: "white",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -56,7 +56,7 @@ export const styles = StyleSheet.create({
     backgroundColor: "#ccc",
     borderRadius: 3,
     alignSelf: "center",
-    marginBottom: 15,
+    marginBottom: 24,
   },
   title: {
     fontSize: 20,
@@ -138,5 +138,9 @@ export const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "#f2f2f2",
+  },
+  disabledButton: {
+    backgroundColor: "#E0E0E0",
+    color: "#8B8B8B",
   },
 });

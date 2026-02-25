@@ -17,7 +17,7 @@ const CircularProgress: React.FC<CircularProgressProps> = ({
   strokeWidth,
   progress,
   text,
-  color = "tomato",
+  color = "#FF0014",
   backgroundColor = "#eee",
   duration = 1000,
 }) => {

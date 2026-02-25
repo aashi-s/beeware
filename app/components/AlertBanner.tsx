@@ -1,13 +1,26 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Platform, Text, View } from "react-native";
 import { COLOURS, styles } from "../styles/styles";
-
+type AlertType =
+  | "treatmentComplete"
+  | "checkComplete"
+  | "infestationDetected"
+  | "checkLevels"
+  | "checkIncomplete"
+  | "treatmentUnavailable"
+  | "treatmentFailed"
+  | "connectionError"
+  | "analysisFailed"
+  | "recommendationAvailable"
+  | "treatmentTemporarilyUnavailable"
+  | "recommendationExpired"
+  | "treatmentNotApplied";
 const AlertBanner = ({
   alertType,
-  // onPressFunction,
+  closeAlert,
 }: {
-  alertType: string;
-  // onPressFunction: () => void;
+  alertType: AlertType;
+  closeAlert?: () => void;
 }) => {
   let level = "";
   let title = "";
@@ -46,13 +59,25 @@ const AlertBanner = ({
       text =
         "Your mite check was not completed. Please try again to save your results.";
       break;
-
+    case "treatmentTemporarilyUnavailable":
+      level = "warning";
+      title = "Treatment Temporarily Unavailable";
+      text =
+        "The current outdoor temperature is outside the safe range for this treatment. We’ll notify you when it’s safe to apply.";
+      break;
+    case "recommendationExpired":
+      level = "warning";
+      title = "Expired Treatment Recommendation";
+      text =
+        "Your treatment recommendation is out of date. Please recheck your infestation status.";
+      break;
     case "treatmentUnavailable":
       level = "error";
       title = "Treatment Unavailable";
       text =
         "Treatment cannot be applied during this time of year. Please remove device from the hive.";
       break;
+
     case "treatmentFailed":
       level = "error";
       title = "Treatment Failed";
@@ -75,6 +100,11 @@ const AlertBanner = ({
       level = "general";
       title = "Treatment Recommendation Available";
       text = "Visit treatment recommendation to view and apply to your hive.";
+      break;
+    case "treatmentNotApplied":
+      level = "general";
+      title = "No Treatment Applied";
+      text = "You've opted out of applying treatment.";
       break;
 
     default:
@@ -130,6 +160,7 @@ const AlertBanner = ({
               ? styles.error
               : styles.generalAlert,
         styles.alert,
+        !closeAlert && { marginTop: 0 },
       ]}
     >
       {getIcon(level)}
@@ -154,7 +185,14 @@ const AlertBanner = ({
           {text}
         </Text>
       </View>
-      <MaterialCommunityIcons name="close" color={COLOURS.darkGrey} size={12} />
+      {closeAlert && (
+        <MaterialCommunityIcons
+          name="close"
+          color={COLOURS.darkGrey}
+          size={12}
+          onPress={closeAlert}
+        />
+      )}
     </View>
   );
 };

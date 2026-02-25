@@ -332,14 +332,14 @@ class VarroaDetector:
             # Run detection
             self.run_detection()
 
-            if overrideTreatment:
+            self.mite_count = self.mite_count // numDays
+            if overrideTreatment and self.mite_count > 9:
                 return {
                     "infestation": True,
                     "treatment_recommendation": overrideTreatment,
                     "mite_count": 100,
                     "delay": False,
                 }
-            self.mite_count = self.mite_count // numDays
             if (
                 self.mite_count >= 9 and curr_date.month >= 3 and curr_date.month < 8
             ) or (
