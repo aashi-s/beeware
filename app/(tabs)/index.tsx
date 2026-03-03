@@ -610,7 +610,7 @@ export default function Index() {
                 <CircularProgress
                   size={80}
                   strokeWidth={10}
-                  progress={75} // 75% filled
+                  progress={Math.min((latestMiteCount * 100) / 12, 100)} // 75% filled
                   text={
                     latestMiteCount > 12 ? "> 12" : latestMiteCount.toString()
                   }
@@ -676,7 +676,8 @@ export default function Index() {
               <TouchableOpacity
                 style={[
                   styles.modalButton,
-                  nextCheck < 0 && styles.disabledButton,
+                  (nextCheck < 0 || latestMiteCount <= 9) &&
+                    styles.disabledButton,
                   { width: "47%", alignItems: "center" },
                 ]}
                 onPress={() => {
@@ -687,13 +688,14 @@ export default function Index() {
                     prev.filter((i) => i != "recommendationAvailable"),
                   );
                 }}
-                disabled={nextCheck < 0}
+                disabled={nextCheck < 0 || latestMiteCount <= 9}
               >
                 <Text
                   style={[
                     styles.modalButton,
                     styles.buttonText,
-                    nextCheck < 0 && styles.disabledButton,
+                    (nextCheck < 0 || latestMiteCount <= 9) &&
+                      styles.disabledButton,
                     { backgroundColor: "transparent" },
                   ]}
                 >
@@ -1156,7 +1158,7 @@ export default function Index() {
                 }}
               >
                 <CircularLoader
-                  duration={3000}
+                  duration={10000}
                   isLoading={isAnalyzing != "Analysis Completed"}
                 />
               </View>
@@ -1706,6 +1708,7 @@ export default function Index() {
         }
 
         setInfestation(responseData["infestation"]);
+        console.log(responseData["mite_count"]);
         setLatestMiteCount(responseData["mite_count"]);
         setNextCheck(30);
         setTreatmentUnread(true);
@@ -1759,7 +1762,7 @@ export default function Index() {
         }}
       >
         <Text style={{ fontSize: 16 }}>Good {getTimeOfDay()},</Text>
-        <Text style={styles.h1}>Aashi</Text>
+        <Text style={styles.h1}>User</Text>
       </View>
       {/* Alerts */}
       <View>
