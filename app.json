@@ -58,6 +58,16 @@
             "backgroundColor": "#000000"
           }
         }
+      ],
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "node_modules/@expo-google-fonts/roboto/800ExtraBold/Roboto_800ExtraBold.ttf",
+            "node_modules/@expo-google-fonts/roboto/400Regular/Roboto_400Regular.ttf",
+            "node_modules/@expo-google-fonts/roboto/600SemiBold/Roboto_600SemiBold.ttf"
+          ]
+        }
       ]
     ],
     "experiments": {

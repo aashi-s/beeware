@@ -289,7 +289,18 @@ class VarroaDetector:
                 else:
                     return "null"
 
-    def select_folder(self, temperature=None, image=None, overrideTreatment=None):
+    def select_folder(
+        self, temperature=None, image=None, overrideTreatment=None, numDays=1
+    ):
+        curr_date = datetime.datetime.now()
+        if not overrideTreatment and (curr_date.month < 3 or curr_date.month > 11):
+            # don't check in winter, come back later
+            return {
+                "infestation": False,
+                "treatment_recommendation": "None",
+                "mite_count": self.mite_count,
+                "delay": False,
+            }
         self.temperature = float(temperature) if temperature else None
         if overrideTreatment:
             self.temperature = float(20)
@@ -321,17 +332,18 @@ class VarroaDetector:
             # Run detection
             self.run_detection()
 
-            curr_date = datetime.datetime.now()
-            if overrideTreatment:
+            self.mite_count = self.mite_count // numDays
+            if overrideTreatment and self.mite_count > 9:
                 return {
                     "infestation": True,
                     "treatment_recommendation": overrideTreatment,
                     "mite_count": 100,
                     "delay": False,
                 }
-            # TODO: update condition to consider other months too
-            if (self.mite_count >= 9 and curr_date.month == 5) or (
-                self.mite_count >= 12 and curr_date.month == 8
+            if (
+                self.mite_count >= 9 and curr_date.month >= 3 and curr_date.month < 8
+            ) or (
+                self.mite_count >= 12 and curr_date.month >= 8 and curr_date.month <= 11
             ):
                 treatment_recommendation = self.determine_treatment(curr_date)
                 return {
