@@ -7,11 +7,13 @@ import { COLOURS } from "../styles/styles";
 interface CircularLoaderProps {
   duration?: number;
   isLoading: boolean;
+  version: "detection" | "treatment";
 }
 
 const CircularLoader: React.FC<CircularLoaderProps> = ({
   duration = 5000,
   isLoading,
+  version,
 }) => {
   useEffect(() => {
     if (!isLoading) {
@@ -30,11 +32,18 @@ const CircularLoader: React.FC<CircularLoaderProps> = ({
   const [completed, setCompleted] = useState(false);
   const [textIndex, setTextIndex] = useState(0);
 
-  const texts = [
-    "Analyzing your sticky board...",
-    "Counting your mite levels...",
-    "Determining infestation status...",
-  ];
+  const texts =
+    version == "detection"
+      ? [
+          "Analyzing your sticky board...",
+          "Counting your mite levels...",
+          "Determining infestation status...",
+        ]
+      : [
+          "Connecting to device...",
+          "Checking treatment levels..",
+          "Activating pump...",
+        ];
 
   const animatedValue = useRef(new Animated.Value(0)).current;
 

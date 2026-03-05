@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Platform, Text, View } from "react-native";
+import { Platform, Text, TouchableOpacity, View } from "react-native";
 import { COLOURS, styles } from "../styles/styles";
 type AlertType =
   | "treatmentComplete"
@@ -186,12 +186,19 @@ const AlertBanner = ({
         </Text>
       </View>
       {closeAlert && (
-        <MaterialCommunityIcons
-          name="close"
-          color={COLOURS.darkGrey}
-          size={12}
+        <TouchableOpacity
+          style={{
+            padding: 10,
+            justifyContent: "center",
+          }}
           onPress={closeAlert}
-        />
+        >
+          <MaterialCommunityIcons
+            name="close"
+            color={COLOURS.darkGrey}
+            size={12}
+          />
+        </TouchableOpacity>
       )}
     </View>
   );

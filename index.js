@@ -5,6 +5,7 @@ import App from "./app/(tabs)";
 
 export const userStorage = createMMKV({ id: "user-sessions" });
 export const notificationStorage = createMMKV({ id: "notifications" });
+export const alertStorage = createMMKV({ id: "alerts" });
 
 // async function onMessageReceived(message) {
 //   console.log("Message received: ", message);

@@ -26,7 +26,7 @@ import ScanInfoOne from "../../assets/scanInfo1.svg";
 import ScanInfoTwo from "../../assets/scanInfo2.svg";
 import ScanInfoThree from "../../assets/scanInfo3.svg";
 import TreatInfo from "../../assets/treatInfo.svg";
-import { notificationStorage, userStorage } from "../../index";
+import { alertStorage, notificationStorage, userStorage } from "../../index";
 import ActionButton from "../components/ActionButton";
 import AlertBanner from "../components/AlertBanner";
 import CircularLoader from "../components/CircularLoader";
@@ -48,7 +48,7 @@ Notifications.setNotificationHandler({
 
 // TYPES
 type ApprovalType = "pending" | "approved" | "declined";
-type ApplicationType = "pending" | "success" | "error" | "null";
+type ApplicationType = "pending" | "success" | "error";
 type AlertType =
   | "treatmentComplete"
   | "checkComplete"
@@ -63,6 +63,19 @@ type AlertType =
   | "treatmentTemporarilyUnavailable"
   | "recommendationExpired"
   | "treatmentNotApplied";
+type TreatmentStatusType =
+  | "Formic acid pump activated"
+  | "Formic acid pump turned off"
+  | "Oxalic acid pump activated"
+  | "Oxalic acid pump turned off"
+  | "Thymol pump activated"
+  | "Thymol pump turned off"
+  | "All pumps off"
+  | "All pumps off, system ready"
+  | "Error: Formic acid pump not activated"
+  | "Error: Oxalic acid pump not activated"
+  | "Error: Thymol pump not activated";
+type MiteCheckStatusType = "not started" | "pending" | "success" | "error";
 export default function Index() {
   // STATES
   const [lastUpdated, setLastUpdated] = useState(
@@ -87,7 +100,7 @@ export default function Index() {
   const [lastNotInfested, setlastNotInfested] = useState(32);
   const [numDays, setNumDays] = useState("1");
   const [treatmentStep, setTreatmentStep] = useState(0);
-  const [alerts, setAlerts] = useState<AlertType[]>([]);
+  const [alerts, setAlerts] = useState<Set<AlertType>>(new Set());
   const [imageStatus, setImageStatus] = useState("");
   const [isModalVisible, setModalVisible] = useState(false);
   const [treatmentModalVisible, setTreatmentModalVisible] = useState(false);
@@ -103,6 +116,7 @@ export default function Index() {
     applied?: ApplicationType;
     date: string;
     updatedAt?: string;
+    miteCheckStatus: MiteCheckStatusType;
   }>({
     userInputs: undefined,
     miteCount: undefined,
@@ -114,6 +128,7 @@ export default function Index() {
     applied: undefined,
     date: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    miteCheckStatus: "not started",
   });
   const [channels, setChannels] = useState<Notifications.NotificationChannel[]>(
     [],
@@ -123,8 +138,18 @@ export default function Index() {
   >(undefined);
   const [sessionId, setSessionId] = useState("");
   const [isConnected, setIsConnected] = useState(false); //Is a device connected?
+  {
+    /**for loading**/
+  }
   const [isAnalyzing, setIsAnalyzing] = useState("Start Analysis"); //Is the analysis process ongoing?
+
+  {
+    /****/
+  }
   const [treatment, setTreatment] = useState<string>("Formic Acid"); //Treatment value returned
+  const [treatmentStatus, setTreatmentStatus] = useState<TreatmentStatusType>(
+    "All pumps off, system ready",
+  ); //Treatment status value returned
   const [treatmentUnread, setTreatmentUnread] = useState<boolean>(false);
   const [infestation, setInfestation] = useState<boolean | undefined>(
     undefined,
@@ -143,7 +168,7 @@ export default function Index() {
   const TEMPERATURE_UUID = "6d68efe5-04b6-4a85-abc4-c2670b7bf7fd";
   const TREATMENT_UUID = "f27b53ad-c63d-49a0-8c0f-9f297e6cc520";
   const BACKGROUND_NOTIFICATION_TASK = "BACKGROUND-NOTIFICATION-TASK";
-  // const CONSOLE_UUID = "";
+  const STATUS_UUID = "d94602a9-e36e-4296-9514-fa2c3b9878c7";
   const THREE_MONTHS = 3 * 30 * 24 * 60 * 60; // in seconds
 
   const BLTManager = new BleManager();
@@ -196,6 +221,49 @@ export default function Index() {
     return token;
   }
   useEffect(() => {
+    if (treatmentStatus.toLocaleLowerCase().includes("error")) {
+      setSessionDetails((sessionDetails) => ({
+        ...sessionDetails,
+        applied: "error",
+      }));
+      setAlerts((prevAlerts) => {
+        const newAlerts = new Set(prevAlerts);
+        newAlerts.add("treatmentFailed");
+        return newAlerts;
+      });
+    } else if (treatmentStatus.toLocaleLowerCase().includes("activated")) {
+      setSessionDetails((sessionDetails) => ({
+        ...sessionDetails,
+        applied: "success",
+      }));
+      setTreatment("success");
+      setAlerts((prevAlerts) => {
+        const newAlerts = new Set(prevAlerts);
+
+        newAlerts.delete("infestationDetected");
+        newAlerts.delete("checkComplete");
+        newAlerts.add("treatmentComplete");
+
+        return newAlerts;
+      });
+    }
+  }, [treatmentStatus]);
+
+  useEffect(() => {
+    alertStorage.set("alerts", JSON.stringify([...alerts]));
+  }, [alerts]);
+  useEffect(() => {
+    if (sessionId) {
+      userStorage.set(
+        sessionId,
+        JSON.stringify({
+          ...sessionDetails,
+          updatedAt: new Date().toISOString(),
+        }),
+      );
+    }
+  }, [sessionDetails]);
+  useEffect(() => {
     setLastUpdated(
       new Date()
         .toLocaleString("en-US", {
@@ -211,6 +279,25 @@ export default function Index() {
 
   useEffect(() => {
     // db
+    const today = new Date();
+    const loadedAlerts = alertStorage.getString("alerts");
+    console.log("loaded alerts", loadedAlerts);
+    if (today.getMonth() < 2 || today.getMonth() > 11) {
+      setAlerts(new Set(["treatmentFailed"]));
+    } else if (loadedAlerts) {
+      const loadedAlertData = JSON.parse(loadedAlerts);
+      setAlerts(
+        new Set(
+          loadedAlertData.filter(
+            (a: AlertType) =>
+              a != "treatmentUnavailable" &&
+              a != "treatmentNotApplied" &&
+              a != "treatmentComplete" &&
+              a != "recommendationAvailable",
+          ),
+        ),
+      );
+    }
     const lastSession = userStorage.getString("latestSession");
     if (lastSession) {
       const lastSessionData = userStorage.getString(lastSession);
@@ -219,8 +306,14 @@ export default function Index() {
       if (parsed.treatment_recommendation) {
         setTreatment(parsed.treatment);
       }
+      if (parsed.miteCheckStatus == ("pending" as MiteCheckStatusType)) {
+        setAlerts((prevAlerts) => {
+          const newAlerts = new Set(prevAlerts);
+          newAlerts.add("checkIncomplete");
+          return newAlerts;
+        });
+      }
       if (parsed.date) {
-        const today = new Date();
         const lastDate = new Date(parsed.date);
         setLastCheckDate(lastDate);
 
@@ -230,10 +323,32 @@ export default function Index() {
 
         setNextCheck(30 - diffDays);
         if (diffDays >= 30) {
-          setAlerts((alerts) => [...alerts, "checkLevels"]);
+          setAlerts((prevAlerts) => {
+            const newAlerts = new Set(prevAlerts);
+            newAlerts.add("checkLevels");
+            return newAlerts;
+          });
+        }
+        if (parsed.applied == "pending") {
+          // infestation detected alert timeout after 7 days
+          setAlerts((prevAlerts) => {
+            const newAlerts = new Set(prevAlerts);
+            newAlerts.delete("infestationDetected");
+            return newAlerts;
+          });
+          if (diffDays < 7 && today.getMonth() > 3 && today.getMonth() < 11) {
+            setAlerts((prevAlerts) => {
+              const newAlerts = new Set(prevAlerts);
+              newAlerts.add("infestationDetected");
+              return newAlerts;
+            });
+          }
         }
       }
     }
+
+    // ble
+    scanDevices();
 
     // notifs
     registerForPushNotificationsAsync().then(
@@ -328,6 +443,11 @@ export default function Index() {
       BLTManager.startDeviceScan(null, null, (error, scannedDevice) => {
         if (error) {
           console.warn(error);
+          setAlerts((prevAlerts) => {
+            const newAlerts = new Set(prevAlerts);
+            newAlerts.add("connectionError");
+            return newAlerts;
+          });
         }
 
         if (scannedDevice && scannedDevice.name == "BLETest") {
@@ -370,10 +490,18 @@ export default function Index() {
   //Function to send data to ESP32
   async function sendTreatment(value: string) {
     if (connectedDevice == null) {
+      setSessionDetails((sessionDetails) => ({
+        ...sessionDetails,
+        applied: "error" as ApplicationType,
+      }));
+      setAlerts((prevAlerts) => {
+        const newAlerts = new Set(prevAlerts);
+        newAlerts.add("connectionError");
+        return newAlerts;
+      });
       return;
     }
     // writes to microcontroller, it gets a characteristic in return from which it prints the value
-    // it doesnt set the treatment (what is shown on the frontend) just yet though
     BLTManager.writeCharacteristicWithResponseForDevice(
       connectedDevice?.id,
       SERVICE_UUID,
@@ -396,6 +524,11 @@ export default function Index() {
       .then((device) => {
         setConnectedDevice(device);
         setIsConnected(true);
+        setAlerts((prevAlerts) => {
+          const newAlerts = new Set(prevAlerts);
+          newAlerts.delete("connectionError");
+          return newAlerts;
+        });
         return device.discoverAllServicesAndCharacteristics();
       })
       .then((device) => {
@@ -413,6 +546,16 @@ export default function Index() {
           .then((valenc) => {
             if (valenc?.value) {
               setTemperature(base64.decode(valenc?.value));
+            }
+          });
+
+        device
+          .readCharacteristicForService(SERVICE_UUID, STATUS_UUID)
+          .then((valenc) => {
+            if (valenc?.value) {
+              setTreatmentStatus(
+                base64.decode(valenc?.value) as TreatmentStatusType,
+              );
             }
           });
 
@@ -464,20 +607,24 @@ export default function Index() {
           "treatmenttransaction",
         );
 
-        // Console
-        // device.monitorCharacteristicForService(
-        //   SERVICE_UUID,
-        //   CONSOLE_UUID,
-        //   (error, characteristic) => {
-        //     if (characteristic?.value != null) {
-        //       console.log(
-        //         "Console update received: ",
-        //         base64.decode(characteristic?.value)
-        //       );
-        //     }
-        //   },
-        //   "consoletransaction"
-        // );
+        // Status
+        // Temperature
+        device.monitorCharacteristicForService(
+          SERVICE_UUID,
+          STATUS_UUID,
+          (error, characteristic) => {
+            if (characteristic?.value != null) {
+              setTreatmentStatus(
+                base64.decode(characteristic?.value) as TreatmentStatusType,
+              );
+              console.log(
+                "Treatment status update received: ",
+                base64.decode(characteristic?.value),
+              );
+            }
+          },
+          "treatmentstatustransaction",
+        );
 
         console.log("Connection established");
       });
@@ -515,6 +662,7 @@ export default function Index() {
 
   const closeTreatmentModal = () => {
     setTreatmentModalVisible(false);
+    setApprovedTreatment(false);
     slideAnim.setValue(0);
   };
 
@@ -684,9 +832,11 @@ export default function Index() {
                   closeUploadModal();
                   setTreatmentModalVisible(true);
                   setTreatmentUnread(false);
-                  setAlerts((prev) =>
-                    prev.filter((i) => i != "recommendationAvailable"),
-                  );
+                  setAlerts((prevAlerts) => {
+                    const newAlerts = new Set(prevAlerts);
+                    newAlerts.delete("recommendationAvailable");
+                    return newAlerts;
+                  });
                 }}
                 disabled={nextCheck < 0 || latestMiteCount <= 9}
               >
@@ -1160,6 +1310,7 @@ export default function Index() {
                 <CircularLoader
                   duration={10000}
                   isLoading={isAnalyzing != "Analysis Completed"}
+                  version="detection"
                 />
               </View>
             </View>
@@ -1184,10 +1335,12 @@ export default function Index() {
                     },
                   ]}
                   onPress={() => {
-                    setAlerts((alerts) => [
-                      ...alerts.filter((i) => i != "checkLevels"),
-                      "checkComplete",
-                    ]);
+                    setAlerts((prevAlerts) => {
+                      const newAlerts = new Set(prevAlerts);
+                      newAlerts.delete("checkLevels");
+                      newAlerts.add("checkComplete");
+                      return newAlerts;
+                    });
                     getNextStep(0);
                   }}
                 >
@@ -1466,8 +1619,55 @@ export default function Index() {
             </View>
           </View>
         );
-      // if there is a treatment
-      default:
+      default: // if there is a treatment
+        // loading screen
+        if (sessionDetails.applied == "pending")
+          return (
+            <View
+              style={{
+                justifyContent: "space-between",
+                flex: 1,
+              }}
+            >
+              <View style={{ gap: 24 }}>
+                <Text
+                  style={{
+                    borderTopColor: "#D8EAE9",
+                    borderTopWidth: 1,
+                    borderBottomColor: "#D8EAE9",
+                    borderBottomWidth: 1,
+                    paddingBlock: 10,
+                    fontWeight: 600,
+                  }}
+                >
+                  Applying Treatment:{" "}
+                  <Text style={{ color: COLOURS.colour3, fontWeight: "bold" }}>
+                    {treatment.replace(
+                      /\w\S*/g,
+                      (text) =>
+                        text.charAt(0).toUpperCase() +
+                        text.substring(1).toLowerCase(),
+                    )}
+                  </Text>
+                </Text>
+                <View
+                  style={{
+                    justifyContent: "center",
+                    alignItems: "center",
+                    marginTop: 70,
+                    height: "auto",
+                  }}
+                >
+                  <CircularLoader
+                    duration={10000}
+                    isLoading={sessionDetails.applied == "pending"}
+                    version="treatment"
+                  />
+                </View>
+              </View>
+            </View>
+          );
+        // treatment approval screen
         return (
           <View style={{ gap: 24 }}>
             <Text
@@ -1555,11 +1755,12 @@ export default function Index() {
                     },
                   ]}
                   onPress={() => {
-                    setTreatment("success");
-                    setAlerts((alerts) => [
-                      ...alerts.filter((i) => i != "infestationDetected"),
-                      "treatmentComplete",
-                    ]);
+                    setSessionDetails((sessionDetails) => ({
+                      ...sessionDetails,
+                      applied: "pending" as ApplicationType,
+                      approval: "approved" as ApprovalType,
+                    }));
+                    sendTreatment(treatment);
                   }}
                   disabled={
                     new Date().getFullYear() !==
@@ -1602,7 +1803,11 @@ export default function Index() {
                   <Text
                     onPress={() => {
                       closeTreatmentModal();
-                      setAlerts((alerts) => [...alerts, "treatmentNotApplied"]);
+                      setAlerts((prevAlerts) => {
+                        const newAlerts = new Set(prevAlerts);
+                        newAlerts.add("treatmentNotApplied");
+                        return newAlerts;
+                      });
                     }}
                   >
                     Not now
@@ -1658,6 +1863,11 @@ export default function Index() {
   const handleStartAnalysis = async () => {
     try {
       setIsAnalyzing("Analyzing");
+
+      setSessionDetails((sessionDetails) => ({
+        ...sessionDetails,
+        miteCheckStatus: "pending" as MiteCheckStatusType,
+      }));
       const response = await fetch(`${BACKEND_URL}/temperature`, {
         method: "POST",
         headers: {
@@ -1689,20 +1899,21 @@ export default function Index() {
           infestation: responseData["infestation"],
           temperature: temperature,
           treatment: responseData["treatment_recommendation"],
-          approval: "pending" as ApprovalType,
           delay: responseData["delay"],
-          applied: "pending" as ApplicationType,
-          updatedAt: new Date().toISOString(),
+          miteCheckStatus: "success" as MiteCheckStatusType,
         };
         console.log(sessionUpdate);
         setSessionDetails(sessionUpdate);
         const currSession = uuid.v4();
         setSessionId(currSession);
-        userStorage.set(currSession, JSON.stringify(sessionUpdate));
         userStorage.set("latestSession", currSession);
         setTreatment(responseData["treatment_recommendation"]);
         if (responseData["infestation"]) {
-          setAlerts((alerts) => [...alerts, "infestationDetected"]);
+          setAlerts((prevAlerts) => {
+            const newAlerts = new Set(prevAlerts);
+            newAlerts.add("infestationDetected");
+            return newAlerts;
+          });
         } else {
           setlastNotInfested(0);
         }
@@ -1712,7 +1923,11 @@ export default function Index() {
         setLatestMiteCount(responseData["mite_count"]);
         setNextCheck(30);
         setTreatmentUnread(true);
-        setAlerts((prev) => [...prev, "recommendationAvailable"]);
+        setAlerts((prevAlerts) => {
+          const newAlerts = new Set(prevAlerts);
+          newAlerts.add("recommendationAvailable");
+          return newAlerts;
+        });
         setLastCheckDate(new Date());
         // if infestation is false, also schedule a notification 3 months from now
         if (!responseData["infestation"]) {
@@ -1727,6 +1942,11 @@ export default function Index() {
         // Handle error response
         console.error("Error:", response.statusText);
         setIsAnalyzing("Analysis Failed");
+
+        setSessionDetails((sessionDetails) => ({
+          ...sessionDetails,
+          miteCheckStatus: "error" as MiteCheckStatusType,
+        }));
       }
     } catch (error) {
       console.error(error);
@@ -1766,11 +1986,20 @@ export default function Index() {
       </View>
       {/* Alerts */}
       <View>
-        {alerts.map((a, i) => (
+        {[...alerts].map((a, i) => (
           <AlertBanner
             alertType={a}
             key={i}
-            closeAlert={() => setAlerts((prev) => prev.filter((x) => x != a))}
+            closeAlert={
+              a == "treatmentUnavailable" || a == "connectionError"
+                ? undefined
+                : () =>
+                    setAlerts((prevAlerts) => {
+                      const newAlerts = new Set(prevAlerts);
+                      newAlerts.delete(a);
+                      return newAlerts;
+                    })
+            }
           />
         ))}
       </View>
@@ -1838,17 +2067,21 @@ export default function Index() {
         <ActionButton
           text="Check Infestation Status"
           onPressFunction={() => setModalVisible(true)}
+          disabled={new Date().getMonth() < 2 || new Date().getMonth() > 11}
         />
         <ActionButton
           text="Treatment Recommendation"
           onPressFunction={() => {
             setTreatmentUnread(false);
-            setAlerts((prev) =>
-              prev.filter((i) => i != "recommendationAvailable"),
-            );
+            setAlerts((prevAlerts) => {
+              const newAlerts = new Set(prevAlerts);
+              newAlerts.delete("recommendationAvailable");
+              return newAlerts;
+            });
             setTreatmentModalVisible(true);
           }}
           unread={treatmentUnread}
+          disabled={new Date().getMonth() < 2 || new Date().getMonth() > 11}
         />
         <ActionButton
           text="Treatment Management"
@@ -1861,7 +2094,8 @@ export default function Index() {
             setlastNotInfested(32);
             setNextCheck(-1);
             setLastCheckDate(new Date("2026-01-26"));
-            setAlerts([]);
+            setAlerts(new Set());
+            setApprovedTreatment(false);
           }}
         />
 

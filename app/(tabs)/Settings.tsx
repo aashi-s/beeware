@@ -20,7 +20,7 @@ import { Device as BLEDevice, BleManager } from "react-native-ble-plx";
 import { launchImageLibrary } from "react-native-image-picker";
 import Modal from "react-native-modal";
 import uuid from "react-native-uuid";
-import { notificationStorage, userStorage } from "../../index";
+import { alertStorage, notificationStorage, userStorage } from "../../index";
 import { styles } from "../styles/styles";
 
 LogBox.ignoreLogs(["new NativeEventEmitter"]); // Ignore log notification by message
@@ -947,7 +947,7 @@ export default function Settings() {
                 notifIds.length > 0
                   ? notificationStorage.getString(notifIds[0]) || ""
                   : "";
-              console.log("notif details from database", JSON.parse(data));
+              console.log("notif details from database", data);
             }}
           >
             Get last notification
@@ -956,11 +956,12 @@ export default function Settings() {
             style={{ width: 200 }}
             onPress={() => {
               const userIds = userStorage.getAllKeys();
-              console.log(userIds);
-              for (const id of userIds) {
-                const res = userStorage.getString(id);
-                console.log("user info", id, JSON.parse(res || ""));
-              }
+              const alerts = alertStorage.getString("alerts");
+              console.log(alerts);
+              // for (const id of userIds) {
+              //   const res = userStorage.getString(id);
+              //   console.log("user info", id, res);
+              // }
             }}
           >
             Get full user database
