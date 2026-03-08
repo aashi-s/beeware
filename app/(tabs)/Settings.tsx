@@ -623,7 +623,7 @@ export default function Settings() {
   const handleStartAnalysis = async (temperature: string) => {
     try {
       setIsAnalyzing("Analyzing");
-      const response = await fetch(`${BACKEND_URL}/temperature`, {
+      const response = await fetch(`${BACKEND_URL}/detectAndTreat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

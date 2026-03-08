@@ -182,11 +182,12 @@ def process_dng(file_path):
         return None
 
 
-def crop_green_lines(base64_str):
-    """Detect green lines from file."""
+def decode_image(image):
+    if not image:
+        return None
     # If the base64 string includes a prefix like "data:image/png;base64,", remove it:
-    if base64_str.startswith("data:image"):
-        base64_str = base64_str.split(",")[1]
+    if image.startswith("data:image"):
+        base64_str = image.split(",")[1]
 
     # Decode the base64 string into bytes
     image_bytes = base64.b64decode(base64_str)
@@ -194,8 +195,16 @@ def crop_green_lines(base64_str):
     # Convert bytes to a NumPy array
     nparr = np.frombuffer(image_bytes, np.uint8)
 
-    # Decode the image (similar to cv2.imread)`
-    initial_img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    # Decode the image (similar to cv2.imread)
+    deocded = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    return deocded
+
+
+def crop_green_lines(base64_str):
+    """Detect green lines from file."""
+
+    # Decode the image (similar to cv2.imread)
+    initial_img = decode_image(base64_str)
     if initial_img is None:
         raise ValueError("Could not read image")
     return process_green_lines(
@@ -225,6 +234,74 @@ class VarroaDetector:
         self.current_folder = None  # TODO: remove references to this once testing is done, nothing needs to be saved locally to PC
         self.output_path = None
         self.image_to_analyze = None
+
+    def verify_image(self, encodedImage=None):
+        try:
+
+            def variance_of_laplacian(image):
+                return cv2.Laplacian(image, cv2.CV_64F).var()
+
+            image = decode_image(encodedImage)
+
+            if image is None:
+                return {"verified": False}
+
+            h, w = image.shape[:2]
+
+            # Reject very small images
+            if h < 100 or w < 100:
+                return {"verified": False}
+
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+            brightness = np.mean(gray)
+            contrast = gray.std()
+
+            # Reject completely dark or overexposed images
+            if brightness < 40 or brightness > 220:
+                return {"verified": False}
+
+            # Reject extremely low contrast images
+            if contrast < 20:
+                return {"verified": False}
+
+            # Try enhancement if slightly dark
+            trials = 0
+            while brightness < 100 and trials < 2:
+                trials += 1
+
+                lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                lab[:, :, 0] = clahe.apply(lab[:, :, 0])
+
+                image = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+                # gamma brighten shadows
+                gamma = 0.7
+                image = np.clip((image / 255.0) ** gamma * 255, 0, 255).astype(np.uint8)
+
+                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+                brightness = np.mean(gray)
+
+            # Blur detection
+            fm = variance_of_laplacian(gray)
+
+            if fm < 80:
+                return {"verified": False}
+
+            # Detect glare / flash saturation
+            _, binary_image = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY)
+            bright_ratio = np.sum(binary_image == 255) / (h * w)
+
+            if bright_ratio > 0.2:  # too much glare
+                return {"verified": False}
+
+            return {"verified": True}
+
+        except Exception as e:
+            print("Error in processing:", str(e))
+            return {"verified": False}
 
     def get_all_images(self, folder):
         """Recursively get all JPG and DNG files from folder and subfolders"""

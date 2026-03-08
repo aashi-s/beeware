@@ -52,15 +52,26 @@ class RequestBody(BaseModel):
     numDays: int | None
 
 
+class VerifyRequestBody(BaseModel):
+    image: str
+
+
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
 
 
-@app.post("/temperature")
-async def chat(
+@app.post("/detectAndTreat")
+async def detectAndTreat(
     query: RequestBody = Body(...),
 ):
     return varroa_detector.select_folder(
         query.temperature, query.image, query.overrideTreatment, query.numDays
     )
+
+
+@app.post("/verifyImage")
+async def verifyImage(
+    query: VerifyRequestBody = Body(...),
+):
+    return varroa_detector.verify_image(query.image)

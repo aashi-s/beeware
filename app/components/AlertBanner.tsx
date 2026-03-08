@@ -14,7 +14,8 @@ type AlertType =
   | "recommendationAvailable"
   | "treatmentTemporarilyUnavailable"
   | "recommendationExpired"
-  | "treatmentNotApplied";
+  | "treatmentNotApplied"
+  | "imageNotClear";
 const AlertBanner = ({
   alertType,
   closeAlert,
@@ -96,6 +97,13 @@ const AlertBanner = ({
       text =
         "We couldn’t analyze your sticky board. Please take another image and try again.";
       break;
+    case "imageNotClear":
+      level = "error";
+      title = "Image is Not Clear";
+      text =
+        "We couldn’t analyze your image. Please retry with better lighting.";
+      break;
+
     case "recommendationAvailable":
       level = "general";
       title = "Treatment Recommendation Available";

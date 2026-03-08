@@ -62,7 +62,8 @@ type AlertType =
   | "recommendationAvailable"
   | "treatmentTemporarilyUnavailable"
   | "recommendationExpired"
-  | "treatmentNotApplied";
+  | "treatmentNotApplied"
+  | "imageNotClear";
 type TreatmentStatusType =
   | "Formic acid pump activated"
   | "Formic acid pump turned off"
@@ -93,6 +94,8 @@ export default function Index() {
     new Date("2026-01-26"),
   );
 
+  const [imageError, setImageError] = useState(false);
+  const [verifyingImage, setVerifyingImage] = useState(false);
   const [approvedTreatment, setApprovedTreatment] = useState(false);
   const [latestMiteCount, setLatestMiteCount] = useState(13);
   const [overlayVisible, setOverlayVisible] = useState(false);
@@ -101,7 +104,6 @@ export default function Index() {
   const [numDays, setNumDays] = useState("1");
   const [treatmentStep, setTreatmentStep] = useState(0);
   const [alerts, setAlerts] = useState<Set<AlertType>>(new Set());
-  const [imageStatus, setImageStatus] = useState("");
   const [isModalVisible, setModalVisible] = useState(false);
   const [treatmentModalVisible, setTreatmentModalVisible] = useState(false);
   const [expoPushToken, setExpoPushToken] = useState("");
@@ -630,6 +632,40 @@ export default function Index() {
       });
   }
 
+  const verifyImage = async () => {
+    setVerifyingImage(true);
+    try {
+      const verificationResponse = await fetch(`${BACKEND_URL}/verifyImage`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          image: encodedImage,
+        }),
+      });
+      if (verificationResponse.ok) {
+        // Parse the response body as JSON
+        const jsonResponse = await verificationResponse.json();
+        const responseData: {
+          verified: boolean;
+        } = jsonResponse;
+        if (responseData.verified) {
+          setImageError(false);
+          showSuccessOverlay();
+        } else {
+          // go back to the prev screen with an error
+          setImageError(true);
+          getNextStep(4);
+        }
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setVerifyingImage(false);
+    }
+  };
+
   const showSuccessOverlay = () => {
     setOverlayVisible(true);
 
@@ -656,7 +692,6 @@ export default function Index() {
     setModalVisible(false);
     setTreatmentStep(0);
     slideAnim.setValue(0);
-    setImageStatus("");
     setIsAnalyzing("Start Analysis");
   };
 
@@ -1108,6 +1143,8 @@ export default function Index() {
                 Upload an image of your sticky board
               </Text>
 
+              {imageError && <AlertBanner alertType="imageNotClear" />}
+
               <MaterialCommunityIcons
                 name="upload"
                 size={110}
@@ -1260,7 +1297,7 @@ export default function Index() {
                       alignItems: "center",
                     },
                   ]}
-                  onPress={showSuccessOverlay}
+                  onPress={verifyImage}
                 >
                   <Text
                     style={[
@@ -1269,7 +1306,7 @@ export default function Index() {
                       { backgroundColor: "transparent" },
                     ]}
                   >
-                    Confirm
+                    {verifyingImage ? "Loading" : "Confirm"}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -1829,12 +1866,10 @@ export default function Index() {
       console.log("User cancelled image picker");
     } else if (result.errorCode) {
       console.log(result.errorMessage);
-      setImageStatus("Error Uploading Image");
     } else if (result.assets && result.assets.length > 0) {
       const source = result.assets![0]; //Unwrap the result assets and grab the first item (the captured image)
       setEncodedImage(`data:${source.type};base64,${source.base64}`);
       setImageURI(source.uri);
-      setImageStatus("Uploaded Image Successfully");
       getNextStep(5);
     }
   };
@@ -1850,12 +1885,10 @@ export default function Index() {
       console.log("User cancelled camera");
     } else if (result.errorCode) {
       console.log(result.errorMessage);
-      setImageStatus("Error Taking Image");
     } else if (result.assets && result.assets.length > 0) {
       const source = result.assets![0]; //Unwrap the result assets and grab the first item (the captured image)
       setEncodedImage(`data:${source.type};base64,${source.base64}`);
       setImageURI(source.uri);
-      setImageStatus("Image Captured Successfully");
       getNextStep(5);
     }
   };
@@ -1868,7 +1901,7 @@ export default function Index() {
         ...sessionDetails,
         miteCheckStatus: "pending" as MiteCheckStatusType,
       }));
-      const response = await fetch(`${BACKEND_URL}/temperature`, {
+      const response = await fetch(`${BACKEND_URL}/detectAndTreat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
