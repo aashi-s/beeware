@@ -1,6 +1,5 @@
 import base64
 import datetime
-import io
 import math
 import os
 import shutil
@@ -10,7 +9,6 @@ import threading
 import cv2
 import numpy as np
 import rawpy
-from PIL import Image
 from scipy.spatial.distance import euclidean
 from ultralytics import YOLO
 
@@ -250,6 +248,7 @@ class VarroaDetector:
 
             # Reject very small images
             if h < 100 or w < 100:
+                print("too small")
                 return {"verified": False}
 
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -259,10 +258,12 @@ class VarroaDetector:
 
             # Reject completely dark or overexposed images
             if brightness < 40 or brightness > 220:
+                print("dark or overexposed", brightness)
                 return {"verified": False}
 
             # Reject extremely low contrast images
             if contrast < 20:
+                print("low contrast")
                 return {"verified": False}
 
             # Try enhancement if slightly dark
@@ -287,7 +288,8 @@ class VarroaDetector:
             # Blur detection
             fm = variance_of_laplacian(gray)
 
-            if fm < 80:
+            if fm < 10:
+                print("too blurry", fm)
                 return {"verified": False}
 
             # Detect glare / flash saturation
@@ -295,6 +297,7 @@ class VarroaDetector:
             bright_ratio = np.sum(binary_image == 255) / (h * w)
 
             if bright_ratio > 0.2:  # too much glare
+                print("glare")
                 return {"verified": False}
 
             return {"verified": True}
@@ -327,10 +330,12 @@ class VarroaDetector:
         thread.start()
 
     def determine_treatment(self, date):
-        honey_supers_on = True
-        hive_broodless = True
-        last_treatment = "formic acid"
+        honey_supers_on: bool = self.supersOn == "yes"
+        hive_broodless: bool = self.broodless == "yes"
+
+        last_treatment = "formic acid"  # will grab from database
         temp = self.temperature
+        # this is me getting a temperature when we're not connected to microcontroller lol
         if not temp:
             if date.month >= 11 or date.month < 3:
                 temp = float(2)
@@ -340,35 +345,83 @@ class VarroaDetector:
                 temp = float(20)
             elif date.month >= 8 or date.month < 11:
                 temp = float(15)
-        if date.month == 12 or date.month < 5:
-            return "null"
+        # dont treat dec-feb
+        if date.month == 12 or date.month < 3:
+            return {
+                "treatment_recommendation": "null",
+                "delay": False,
+                "temp_range": [],
+            }
         if honey_supers_on:
             if temp >= 10 and temp <= 26:
-                return "formic acid"
+                return {
+                    "treatment_recommendation": "formic acid",
+                    "delay": False,
+                    "temp_range": [],
+                }
             else:
-                return "null"
+                return {
+                    "treatment_recommendation": "formic acid",
+                    "delay": True,
+                    "temp_range": [10, 26],
+                }
         else:
             if hive_broodless:
                 if temp > 4.4:
-                    return "oxalic acid"
+                    return {
+                        "treatment_recommendation": "oxalic acid",
+                        "delay": False,
+                        "temp_range": [],
+                    }
                 else:
-                    return "null"
+                    return {
+                        "treatment_recommendation": "oxalic acid",
+                        "delay": True,
+                        "temp_range": [4.4, 100],
+                    }
             else:
                 if temp > 26 and temp <= 30:
-                    return "thymol"
+                    return {
+                        "treatment_recommendation": "thymol",
+                        "delay": False,
+                        "temp_range": [],
+                    }
                 elif temp > 15 and temp <= 26:
                     if last_treatment == "formic acid":
-                        return "thymol"
+                        return {
+                            "treatment_recommendation": "thymol",
+                            "delay": False,
+                            "temp_range": [],
+                        }
                     else:
-                        return "formic acid"
+                        return {
+                            "treatment_recommendation": "formic acid",
+                            "delay": False,
+                            "temp_range": [],
+                        }
                 elif temp >= 10 and temp <= 15:
-                    return "formic acid"
+                    return {
+                        "treatment_recommendation": "formic acid",
+                        "delay": False,
+                        "temp_range": [],
+                    }
                 else:
-                    return "null"
+                    return {
+                        "treatment_recommendation": "formic acid",
+                        "delay": True,
+                        "temp_range": [10, 15],
+                    }
 
     def select_folder(
-        self, temperature=None, image=None, overrideTreatment=None, numDays=1
+        self,
+        broodless,
+        supersOn,
+        temperature=None,
+        image=None,
+        overrideTreatment=None,
+        numDays=1,
     ):
+        self.annotated_image = None
         curr_date = datetime.datetime.now()
         if not overrideTreatment and (curr_date.month < 3 or curr_date.month > 11):
             # don't check in winter, come back later
@@ -377,8 +430,12 @@ class VarroaDetector:
                 "treatment_recommendation": "None",
                 "mite_count": self.mite_count,
                 "delay": False,
+                "temp_range": [],
+                "annotated_image": self.annotated_image,
             }
         self.temperature = float(temperature) if temperature else None
+        self.broodless = broodless
+        self.supersOn = supersOn
         if overrideTreatment:
             self.temperature = float(20)
         self.uploadedImage = image
@@ -402,11 +459,11 @@ class VarroaDetector:
             self.current_folder = os.path.join(self.current_folder, "")
             self.image_to_analyze = os.path.join(self.image_to_analyze, "")
             self.output_path = os.path.join(self.current_folder, "processed_images")
-
+            # self.process_and_detect()
             # Process images
             self.process_images()
 
-            # Run detection
+            # # Run detection
             self.run_detection()
 
             self.mite_count = self.mite_count // numDays
@@ -416,18 +473,23 @@ class VarroaDetector:
                     "treatment_recommendation": overrideTreatment,
                     "mite_count": 100,
                     "delay": False,
+                    "temp_range": [],
                 }
             if (
                 self.mite_count >= 9 and curr_date.month >= 3 and curr_date.month < 8
             ) or (
                 self.mite_count >= 12 and curr_date.month >= 8 and curr_date.month <= 11
             ):
-                treatment_recommendation = self.determine_treatment(curr_date)
+                treatment_data = self.determine_treatment(curr_date)
                 return {
                     "infestation": True,
-                    "treatment_recommendation": treatment_recommendation,
+                    "treatment_recommendation": treatment_data[
+                        "treatment_recommendation"
+                    ],
                     "mite_count": self.mite_count,
-                    "delay": False,
+                    "delay": treatment_data["delay"],
+                    "temp_range": treatment_data["temp_range"],
+                    "annotated_image": self.annotated_image,
                 }
             else:
                 # frontend handles showing something about coming back in 3-4 months
@@ -436,11 +498,76 @@ class VarroaDetector:
                     "treatment_recommendation": "None",
                     "mite_count": self.mite_count,
                     "delay": False,
+                    "temp_range": [],
+                    "annotated_image": self.annotated_image,
                 }
 
         except Exception as e:
             print(f"Error in processing: {str(e)}")
             print("Error in processing:", str(e))
+
+    def process_and_detect(self):
+        """
+        Single pipeline: decode → crop to green lines → run YOLO → return annotated result.
+        Replaces the old process_images() + run_detection() split.
+        """
+        print("**********************************")
+        print("STEP 1: Green line crop")
+        print("**********************************")
+
+        # Decode the raw uploaded image (BGR)
+        raw_image = decode_image(self.uploadedImage)
+        if raw_image is None:
+            raise ValueError("Could not decode uploaded image")
+
+        # Attempt green-line crop; fall back to full image
+        crop_img, binary_mask = crop_green_lines(self.uploadedImage)
+        if crop_img is not None:
+            print("Green lines detected — using cropped image for inference")
+            inference_image = crop_img
+        else:
+            print("No green lines detected — using full image for inference")
+            inference_image = raw_image
+
+        print("\n**********************************")
+        print("STEP 2: YOLO inference")
+        print("**********************************")
+
+        # Size to nearest multiple of 32, preserving aspect ratio
+        h, w = inference_image.shape[:2]
+        imgsz = (round(h / 32) * 32, round(w / 32) * 32)
+        print(f"Image size: {w}x{h} → inference size: {imgsz[1]}x{imgsz[0]}")
+
+        results = self.model(
+            source=inference_image,
+            imgsz=imgsz,
+            max_det=2000,
+            conf=0.1,
+            iou=0.5,
+            save=False,
+            show_labels=False,
+            line_width=2,
+            verbose=False,
+            batch=1,
+        )
+
+        self.mite_count = 0
+        self.annotated_image = None
+
+        for result in results:
+            self.mite_count = len(result.boxes)
+
+            # Draw boxes directly on BGR image — no channel flipping needed
+            annotated = inference_image.copy()
+            for box in result.boxes.xyxy.cpu().numpy():
+                x1, y1, x2, y2 = map(int, box[:4])
+                cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 6)
+
+            _, buffer = cv2.imencode(".jpg", annotated)
+            self.annotated_image = base64.b64encode(buffer).decode("utf-8")
+
+        print(f"\nTotal varroa detected: {self.mite_count}")
+        return self.mite_count, self.annotated_image
 
     def process_images(self):
         folder = "C:/Users/Aashi/Documents/GitHub/VarroDetector/sample_images"
@@ -502,20 +629,14 @@ class VarroaDetector:
             print("STEP 2: Performing inference")
             print("**********************************")
 
-            suma = 0
-            img_str = self.uploadedImage
-            if "," in img_str:
-                img_str = img_str.split(",")[1]
-
-            img_bytes = base64.b64decode(img_str)
-            pil_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            image = decode_image(self.uploadedImage)
             results = self.model(
-                source=pil_img,
+                source=image,
                 imgsz=(6016),
                 max_det=2000,
                 conf=0.1,
                 iou=0.5,
-                save=True,
+                save=False,
                 show_labels=False,
                 line_width=2,
                 save_txt=True,
@@ -526,11 +647,26 @@ class VarroaDetector:
                 batch=1,
                 exist_ok=True,
             )
+            annotated_base64 = None
             for result in results:
                 self.mite_count = len(result.boxes)
-                suma += len(result.boxes)
+                # draw boxes
+                annotated = image.copy()
+                annotated = np.array(annotated)
+                annotated = cv2.cvtColor(annotated, cv2.COLOR_RGB2BGR)
 
-            print("\nTotal varroas detected:", suma)
+                for box in result.boxes.xyxy.cpu().numpy():
+                    x1, y1, x2, y2 = map(int, box[:4])
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 6)
+                # convert BGR -> RGB
+                annotated = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
+
+                # encode image to base64
+                _, buffer = cv2.imencode(".jpg", annotated)
+                annotated_base64 = base64.b64encode(buffer).decode("utf-8")
+                self.annotated_image = annotated_base64
+
+            print("\nTotal varroas detected:", self.mite_count)
             print("Analysis complete")
 
         except Exception as e:

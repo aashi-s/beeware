@@ -50,6 +50,8 @@ class RequestBody(BaseModel):
     image: str
     overrideTreatment: str | None
     numDays: int | None
+    broodless: str
+    supersOn: str
 
 
 class VerifyRequestBody(BaseModel):
@@ -66,7 +68,12 @@ async def detectAndTreat(
     query: RequestBody = Body(...),
 ):
     return varroa_detector.select_folder(
-        query.temperature, query.image, query.overrideTreatment, query.numDays
+        query.broodless,
+        query.supersOn,
+        query.temperature,
+        query.image,
+        query.overrideTreatment,
+        query.numDays,
     )
 
 

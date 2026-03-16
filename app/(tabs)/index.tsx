@@ -1,8 +1,9 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
+import { useFocusEffect } from "expo-router";
 import * as TaskManager from "expo-task-manager";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -19,19 +20,29 @@ import {
 } from "react-native";
 import base64 from "react-native-base64";
 import { Device as BLEDevice, BleManager } from "react-native-ble-plx";
-import { launchCamera, launchImageLibrary } from "react-native-image-picker";
+import { launchImageLibrary } from "react-native-image-picker";
 import Modal from "react-native-modal";
 import uuid from "react-native-uuid";
+import { Camera } from "react-native-vision-camera";
 import ScanInfoOne from "../../assets/scanInfo1.svg";
 import ScanInfoTwo from "../../assets/scanInfo2.svg";
 import ScanInfoThree from "../../assets/scanInfo3.svg";
 import TreatInfo from "../../assets/treatInfo.svg";
-import { alertStorage, notificationStorage, userStorage } from "../../index";
+import {
+  alertStorage,
+  delayTreatmentStorage,
+  notificationStorage,
+  reservoirStorage,
+  scheduledTreatmentStorage,
+  userStorage,
+} from "../../index";
 import ActionButton from "../components/ActionButton";
 import AlertBanner from "../components/AlertBanner";
 import CircularLoader from "../components/CircularLoader";
 import CircularProgress from "../components/CircularProgress";
 import ConfirmCheckbox from "../components/ConfirmCheckbox";
+import StickyBoardCamera from "../components/StickyBoardCamera";
+import TreatmentTimeline from "../components/TreatmentTimeline";
 import { COLOURS, styles } from "../styles/styles";
 
 LogBox.ignoreLogs(["new NativeEventEmitter"]); // Ignore log notification by message
@@ -63,22 +74,30 @@ type AlertType =
   | "treatmentTemporarilyUnavailable"
   | "recommendationExpired"
   | "treatmentNotApplied"
-  | "imageNotClear";
+  | "imageNotClear"
+  | "nextRoundReady";
 type TreatmentStatusType =
-  | "Formic acid pump activated"
-  | "Formic acid pump turned off"
-  | "Oxalic acid pump activated"
-  | "Oxalic acid pump turned off"
-  | "Thymol pump activated"
-  | "Thymol pump turned off"
+  | "Formic acid pump act"
+  | "Formic acid pump tur"
+  | "Oxalic acid pump act"
+  | "Oxalic acid pump tur"
+  | "Thymol pump activate"
+  | "Thymol pump turned o"
   | "All pumps off"
-  | "All pumps off, system ready"
-  | "Error: Formic acid pump not activated"
-  | "Error: Oxalic acid pump not activated"
-  | "Error: Thymol pump not activated";
+  | "All pumps off, syste"
+  | "Error: Formic acid p"
+  | "Error: Oxalic acid p"
+  | "Error: Thymol pump n";
 type MiteCheckStatusType = "not started" | "pending" | "success" | "error";
+type TreatmentType = "Oxalic Acid" | "Thymol" | "Formic Acid";
 export default function Index() {
   // STATES
+  const [reservoirQuantity, setReservoirQuantity] = useState<
+    Record<TreatmentType, number>
+  >({ "Oxalic Acid": 100, "Formic Acid": 100, Thymol: 100 });
+  const [reservoirStatus, setReservoirStatus] = useState<
+    Record<TreatmentType, "Full" | "Empty">
+  >({ "Formic Acid": "Full", "Oxalic Acid": "Full", Thymol: "Full" });
   const [lastUpdated, setLastUpdated] = useState(
     new Date()
       .toLocaleString("en-US", {
@@ -101,35 +120,30 @@ export default function Index() {
   const [overlayVisible, setOverlayVisible] = useState(false);
   const [nextCheck, setNextCheck] = useState(-1);
   const [lastNotInfested, setlastNotInfested] = useState(32);
-  const [numDays, setNumDays] = useState("1");
-  const [treatmentStep, setTreatmentStep] = useState(0);
+  // user input for sticky board upload
+  const [numDays, setNumDays] = useState(1);
+  const [broodless, setBroodless] = useState("no");
+  const [supersOn, setSupersOn] = useState("no");
+  const [uploadStep, setUploadStep] = useState(0);
+  const [currentTreatmentView, setCurrentTreatmentView] =
+    useState<TreatmentType>("Oxalic Acid");
   const [alerts, setAlerts] = useState<Set<AlertType>>(new Set());
-  const [isModalVisible, setModalVisible] = useState(false);
+  const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [treatmentModalVisible, setTreatmentModalVisible] = useState(false);
+  const [treatmentManagementModalVisible, setTreatmentManagementModalVisible] =
+    useState(false);
   const [expoPushToken, setExpoPushToken] = useState("");
   const [sessionDetails, setSessionDetails] = useState<{
-    userInputs?: string;
     miteCount?: number;
-    infestation?: boolean;
-    temperature?: string;
     treatment?: string;
-    approval?: ApprovalType;
-    delay?: boolean;
     applied?: ApplicationType;
     date: string;
-    updatedAt?: string;
     miteCheckStatus: MiteCheckStatusType;
   }>({
-    userInputs: undefined,
     miteCount: undefined,
-    infestation: undefined,
-    temperature: undefined,
     treatment: undefined,
-    approval: undefined,
-    delay: undefined,
     applied: undefined,
     date: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
     miteCheckStatus: "not started",
   });
   const [channels, setChannels] = useState<Notifications.NotificationChannel[]>(
@@ -148,9 +162,12 @@ export default function Index() {
   {
     /****/
   }
-  const [treatment, setTreatment] = useState<string>("Formic Acid"); //Treatment value returned
+  const [treatment, setTreatment] = useState<string>("success"); //Treatment value returned
+  const [treatmentApplied, setTreatmentApplied] =
+    useState<string>("Formic Acid");
+  const [foamPadRemovalDate, setFoamPadRemovalDate] = useState<string>("");
   const [treatmentStatus, setTreatmentStatus] = useState<TreatmentStatusType>(
-    "All pumps off, system ready",
+    "All pumps off, syste",
   ); //Treatment status value returned
   const [treatmentUnread, setTreatmentUnread] = useState<boolean>(false);
   const [infestation, setInfestation] = useState<boolean | undefined>(
@@ -158,11 +175,12 @@ export default function Index() {
   ); //Infestation boolean value returned
   const [connectedDevice, setConnectedDevice] = useState<BLEDevice>(); //What device is connected?
   const [temperature, setTemperature] = useState("20");
-  const [treatmentOnMicrocontroller, setTreatmentOnMicrocontroller] = useState<
-    string | null
-  >(null); // treatment value that microcontroller has
   const [encodedImage, setEncodedImage] = useState("");
   const [imageURI, setImageURI] = useState<string | undefined>(undefined);
+  const [detectionResultImageURI, setDetectionResultImageURI] = useState<
+    string | undefined
+  >(undefined);
+  const [showCamera, setShowCamera] = useState(false);
 
   // CONSTANTS
   const BACKEND_URL = "https://loriann-imbricative-transfixedly.ngrok-free.dev";
@@ -171,7 +189,14 @@ export default function Index() {
   const TREATMENT_UUID = "f27b53ad-c63d-49a0-8c0f-9f297e6cc520";
   const BACKGROUND_NOTIFICATION_TASK = "BACKGROUND-NOTIFICATION-TASK";
   const STATUS_UUID = "d94602a9-e36e-4296-9514-fa2c3b9878c7";
-  const THREE_MONTHS = 3 * 30 * 24 * 60 * 60; // in seconds
+  const ONE_MONTH = 30 * 24 * 60 * 60; // in seconds
+  const ONE_DAY = 24 * 60 * 60; // in seconds
+  const APPLICATION_QUANTITIES: Record<TreatmentType, number> = {
+    Thymol: 100,
+    "Oxalic Acid": 50,
+    "Formic Acid": 80,
+  };
+  const RESERVOIR_CAPACITY = 500;
 
   const BLTManager = new BleManager();
 
@@ -222,47 +247,239 @@ export default function Index() {
 
     return token;
   }
+  const getOrdinal = (n: number) => {
+    {
+      if (n > 3 && n < 21) return "th";
+      switch (n % 10) {
+        case 1:
+          return "st";
+        case 2:
+          return "nd";
+        case 3:
+          return "rd";
+        default:
+          return "th";
+      }
+    }
+  };
+  const formatDates = (dates: Date[]) => {
+    const formatted = dates.map((d) => {
+      const month = d.toLocaleString("en-US", { month: "short" });
+      const day = d.getDate();
+      return `${month} ${day}${getOrdinal(day)}`;
+    });
+
+    if (formatted.length === 1) return formatted[0];
+    if (formatted.length === 2) return formatted.join(" and ");
+
+    return (
+      formatted.slice(0, -1).join(", ") +
+      ", and " +
+      formatted[formatted.length - 1]
+    );
+  };
+  const getTreatmentDates = (currTreatment: string) => {
+    const t = currTreatment.toLocaleLowerCase();
+    const steps = t == "formic acid" ? 5 : t == "thymol" ? 3 : 1;
+    const intervalDays = t == "formic acid" ? 6 : t == "thymol" ? 13 : 0;
+    const today = new Date();
+
+    const dates = Array.from({ length: steps }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() + i * intervalDays);
+      return d;
+    });
+    return dates;
+  };
+  const reset = () => {
+    setlastNotInfested(32);
+    setNextCheck(-1);
+    setLastCheckDate(() => {
+      const lastCheck = new Date();
+      lastCheck.setSeconds(lastCheck.getSeconds() - 60 * 60 * 24 * 32);
+      return lastCheck;
+    });
+    setAlerts(new Set());
+    setApprovedTreatment(false);
+    setIsAnalyzing("Start Analysis");
+
+    // wipe entries from this month
+    const now = new Date();
+    const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+    const allKeys = userStorage.getAllKeys();
+
+    allKeys.forEach((key) => {
+      if (key.startsWith(currentMonthPrefix)) {
+        userStorage.remove(key);
+      }
+    });
+  };
   useEffect(() => {
-    if (treatmentStatus.toLocaleLowerCase().includes("error")) {
-      setSessionDetails((sessionDetails) => ({
-        ...sessionDetails,
-        applied: "error",
-      }));
-      setAlerts((prevAlerts) => {
-        const newAlerts = new Set(prevAlerts);
-        newAlerts.add("treatmentFailed");
-        return newAlerts;
-      });
-    } else if (treatmentStatus.toLocaleLowerCase().includes("activated")) {
-      setSessionDetails((sessionDetails) => ({
-        ...sessionDetails,
-        applied: "success",
-      }));
-      setTreatment("success");
-      setAlerts((prevAlerts) => {
-        const newAlerts = new Set(prevAlerts);
+    if (!connectedDevice) return;
+    checkScheduledTreatment();
+  }, [connectedDevice]);
+  useEffect(() => {
+    const sendNotification = async (
+      title: string,
+      body: string,
+      delay: number,
+    ) => {
+      try {
+        await schedulePushNotification(title, body, delay);
+      } catch (err) {
+        console.error(err);
+      }
+    };
 
-        newAlerts.delete("infestationDetected");
-        newAlerts.delete("checkComplete");
-        newAlerts.add("treatmentComplete");
+    const trimmed = treatmentStatus.trim(); // 👈 add this
+    const status = trimmed.toLowerCase();
 
-        return newAlerts;
+    if (status.includes("error")) {
+      setSessionDetails((prev) => ({ ...prev, applied: "error" }));
+
+      const match = status.match(/Error:\s(.+?)\spump/);
+      const chemicalName = match
+        ? match[1]
+            .toLowerCase()
+            .split(" ")
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(" ")
+        : "";
+
+      userStorage.set(
+        new Date().toISOString(),
+        JSON.stringify({
+          title: "Treatment Application Failed",
+          body: chemicalName,
+        }),
+      );
+
+      setAlerts((prev) => {
+        const alerts = new Set(prev);
+        alerts.add("treatmentFailed");
+        return alerts;
       });
+      return;
+    }
+
+    if (!status.includes("tur")) return;
+
+    setSessionDetails((prev) => ({ ...prev, applied: "success" }));
+
+    const match = trimmed.match(/^(.+?) pump\s+tur/i);
+    const chemicalName = match
+      ? match[1]
+          .toLowerCase()
+          .split(" ")
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" ")
+      : "";
+
+    userStorage.set(
+      new Date().toISOString(),
+      JSON.stringify({
+        title: "Treatment Applied Successfully",
+        body: chemicalName,
+      }),
+    );
+    const applicationQuantity = APPLICATION_QUANTITIES[currentTreatmentView];
+
+    const stored = reservoirStorage.getString(chemicalName);
+    const currentCount = stored ? JSON.parse(stored) : 0;
+    const newCount = currentCount + 1;
+
+    reservoirStorage.set(chemicalName, newCount);
+
+    const updatedQuantity =
+      100 -
+      Math.round((newCount * applicationQuantity * 100) / RESERVOIR_CAPACITY);
+
+    const threshold = (applicationQuantity * 100) / RESERVOIR_CAPACITY;
+
+    setReservoirQuantity((prev) => ({
+      ...prev,
+      [chemicalName]: updatedQuantity,
+    }));
+
+    setReservoirStatus((prev) => ({
+      ...prev,
+      [chemicalName]: updatedQuantity < threshold ? "Empty" : "Full",
+    }));
+
+    setTreatment("success");
+    setTreatmentApplied(chemicalName);
+    const today = new Date();
+    const d = new Date(today);
+    const futureDates = getTreatmentDates(chemicalName);
+    if (chemicalName == "Formic Acid") {
+      d.setDate(today.getDate() + 24);
+      setFoamPadRemovalDate(
+        d.toLocaleString("en-US", { month: "short", day: "numeric" }),
+      );
+      sendNotification(
+        "It’s time to replace your foam pads",
+        "The treatment application cycle has been completed. Please remove and discard the used foam pad and replace it with a new one.",
+        24 * 24 * 60 * 60,
+      );
+      // schedule data sent to microcontroller
+      futureDates.slice(1, 4).forEach((date, i) => {
+        scheduledTreatmentStorage.set(
+          date.toISOString(),
+          JSON.stringify({ treatment: "formic acid" }),
+        );
+        sendNotification(
+          "Treatment Ready",
+          "Open the app to apply.",
+          (i + 1) * 6 * 24 * 60 * 60,
+        );
+      });
+    } else if (chemicalName == "Thymol") {
+      d.setDate(today.getDate() + 28);
+      setFoamPadRemovalDate(
+        d.toLocaleString("en-US", { month: "short", day: "numeric" }),
+      );
+      sendNotification(
+        "It’s time to replace your foam pads",
+        "The treatment application cycle has been completed. Please remove and discard the used foam pad and replace it with a new one.",
+        28 * 24 * 60 * 60,
+      );
+      // schedule data sent to microcontroller
+      scheduledTreatmentStorage.set(
+        futureDates[1].toISOString(),
+        JSON.stringify({ treatment: "thymol" }),
+      );
+      sendNotification(
+        "Treatment Ready",
+        "Open the app to apply.",
+        13 * 24 * 60 * 60,
+      );
+    }
+
+    setAlerts((prev) => {
+      const alerts = new Set(prev);
+      alerts.delete("infestationDetected");
+      alerts.delete("checkComplete");
+      alerts.add("treatmentComplete");
+      return alerts;
+    });
+
+    // drill hole at 50 mL on reservoir, so less than 60 they should get more
+    if (updatedQuantity < (60 * 100) / 500) {
+      // send out notification tomorrow if reservoir has < 2 doses left
+      sendNotification(
+        `${chemicalName} Reservoir Low`,
+        `The ${chemicalName} treatment is low and has 1 treatment remaining. Refilling will soon be required.`,
+        ONE_DAY,
+      );
     }
   }, [treatmentStatus]);
-
   useEffect(() => {
     alertStorage.set("alerts", JSON.stringify([...alerts]));
   }, [alerts]);
   useEffect(() => {
     if (sessionId) {
-      userStorage.set(
-        sessionId,
-        JSON.stringify({
-          ...sessionDetails,
-          updatedAt: new Date().toISOString(),
-        }),
-      );
+      userStorage.set("latestSession", JSON.stringify(sessionDetails));
     }
   }, [sessionDetails]);
   useEffect(() => {
@@ -279,15 +496,42 @@ export default function Index() {
     );
   }, [lastNotInfested, nextCheck]);
 
+  async function checkScheduledTreatment() {
+    const keys = scheduledTreatmentStorage
+      .getAllKeys()
+      .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
+
+    for (const key of keys) {
+      const runAt = new Date(key).getTime();
+
+      if (Date.now() >= runAt) {
+        const stored = scheduledTreatmentStorage.getString(key);
+        if (!stored) continue;
+        setAlerts((prevAlerts) => {
+          const newAlerts = new Set(prevAlerts);
+          newAlerts.add("nextRoundReady");
+          return newAlerts;
+        });
+
+        const { treatment } = JSON.parse(stored);
+
+        await sendTreatment(treatment);
+
+        scheduledTreatmentStorage.remove(key);
+      }
+    }
+  }
+  // on app load
   useEffect(() => {
     // db
     const today = new Date();
     const loadedAlerts = alertStorage.getString("alerts");
     console.log("loaded alerts", loadedAlerts);
-    if (today.getMonth() < 2 || today.getMonth() > 11) {
+    if (today.getMonth() <= 2 || today.getMonth() > 11) {
       setAlerts(new Set(["treatmentFailed"]));
     } else if (loadedAlerts) {
       const loadedAlertData = JSON.parse(loadedAlerts);
+      // cleaning up alerts that should collapse on app close
       setAlerts(
         new Set(
           loadedAlertData.filter(
@@ -300,57 +544,58 @@ export default function Index() {
         ),
       );
     }
-    const lastSession = userStorage.getString("latestSession");
-    if (lastSession) {
-      const lastSessionData = userStorage.getString(lastSession);
-      const parsed = lastSessionData ? JSON.parse(lastSessionData) : {};
-      setLatestMiteCount(parsed.miteCount);
-      if (parsed.treatment_recommendation) {
-        setTreatment(parsed.treatment);
-      }
-      if (parsed.miteCheckStatus == ("pending" as MiteCheckStatusType)) {
+    const lastSessionData = userStorage.getString("latestSession");
+
+    const parsed = lastSessionData ? JSON.parse(lastSessionData) : {};
+    setLatestMiteCount(parsed.miteCount);
+    if (parsed.treatment) {
+      setTreatment(parsed.treatment);
+    }
+    if (parsed.miteCheckStatus == ("pending" as MiteCheckStatusType)) {
+      setAlerts((prevAlerts) => {
+        const newAlerts = new Set(prevAlerts);
+        newAlerts.add("checkIncomplete");
+        return newAlerts;
+      });
+    }
+    if (parsed.date) {
+      const lastDate = new Date(parsed.date);
+      setLastCheckDate(lastDate);
+
+      // difference in days
+      const diffTime = today.getTime() - lastDate.getTime();
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+      setNextCheck(30 - diffDays);
+      if (diffDays >= 30) {
         setAlerts((prevAlerts) => {
           const newAlerts = new Set(prevAlerts);
-          newAlerts.add("checkIncomplete");
+          newAlerts.add("checkLevels");
           return newAlerts;
         });
       }
-      if (parsed.date) {
-        const lastDate = new Date(parsed.date);
-        setLastCheckDate(lastDate);
-
-        // difference in days
-        const diffTime = today.getTime() - lastDate.getTime();
-        const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-
-        setNextCheck(30 - diffDays);
-        if (diffDays >= 30) {
+      if (parsed.applied == "pending") {
+        // infestation detected alert timeout after 7 days
+        setAlerts((prevAlerts) => {
+          const newAlerts = new Set(prevAlerts);
+          newAlerts.delete("infestationDetected");
+          return newAlerts;
+        });
+        if (diffDays < 7 && today.getMonth() > 3 && today.getMonth() < 11) {
           setAlerts((prevAlerts) => {
             const newAlerts = new Set(prevAlerts);
-            newAlerts.add("checkLevels");
+            newAlerts.add("infestationDetected");
             return newAlerts;
           });
-        }
-        if (parsed.applied == "pending") {
-          // infestation detected alert timeout after 7 days
-          setAlerts((prevAlerts) => {
-            const newAlerts = new Set(prevAlerts);
-            newAlerts.delete("infestationDetected");
-            return newAlerts;
-          });
-          if (diffDays < 7 && today.getMonth() > 3 && today.getMonth() < 11) {
-            setAlerts((prevAlerts) => {
-              const newAlerts = new Set(prevAlerts);
-              newAlerts.add("infestationDetected");
-              return newAlerts;
-            });
-          }
         }
       }
     }
 
     // ble
     scanDevices();
+
+    // reset state for testing
+    reset();
 
     // notifs
     registerForPushNotificationsAsync().then(
@@ -374,6 +619,52 @@ export default function Index() {
       responseListener.remove();
     };
   }, []);
+
+  useEffect(() => {
+    const notify = async () => {
+      await schedulePushNotification(
+        "It’s time to apply treatment",
+        "The recommended temperature for treatment application has been reached. Open app to apply now.",
+        0,
+      );
+    };
+
+    const delays = delayTreatmentStorage.getAllKeys();
+    for (const key of delays) {
+      const data = delayTreatmentStorage.getString(key);
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (new Date(parsed.expiry) < new Date()) {
+          delayTreatmentStorage.remove(key);
+        } else if (connectedDevice) {
+          // check if current temperature is in bounds
+          if (
+            parsed.minTemp < Number(temperature) &&
+            Number(temperature) < parsed.maxTemp
+          ) {
+            // schedule notification
+            notify();
+            delayTreatmentStorage.remove(key);
+          }
+        }
+      }
+    }
+  }, [temperature]);
+  // when user clicks back to home
+  useFocusEffect(
+    useCallback(() => {
+      console.log("home tab clicked");
+      const data = userStorage.getString("reset");
+      if (data) {
+        const parsed = JSON.parse(data);
+        const resetVal = parsed.value;
+        if (resetVal) {
+          reset();
+          userStorage.set("reset", JSON.stringify({ value: false }));
+        }
+      }
+    }, []),
+  );
 
   async function schedulePushNotification(
     title: string,
@@ -501,6 +792,7 @@ export default function Index() {
         newAlerts.add("connectionError");
         return newAlerts;
       });
+      closeTreatmentModal();
       return;
     }
     // writes to microcontroller, it gets a characteristic in return from which it prints the value
@@ -558,6 +850,10 @@ export default function Index() {
               setTreatmentStatus(
                 base64.decode(valenc?.value) as TreatmentStatusType,
               );
+              console.log(
+                "status received",
+                base64.decode(valenc?.value) as TreatmentStatusType,
+              );
             }
           });
 
@@ -565,8 +861,7 @@ export default function Index() {
         device
           .readCharacteristicForService(SERVICE_UUID, TREATMENT_UUID)
           .then((valenc) => {
-            if (valenc?.value)
-              setTreatmentOnMicrocontroller(base64.decode(valenc?.value));
+            if (valenc?.value) console.log(base64.decode(valenc?.value));
           });
 
         //monitor values and tell what to do when receiving an update
@@ -596,9 +891,7 @@ export default function Index() {
           (error, characteristic) => {
             if (characteristic?.value != null) {
               // setTreatment(StringToBool(base64.decode(characteristic?.value)));
-              setTreatmentOnMicrocontroller(
-                base64.decode(characteristic?.value),
-              );
+              console.log(base64.decode(characteristic?.value));
               // now that its received an update of what the microcontroller sees, it will update
               console.log(
                 "Treatment update received: ",
@@ -633,6 +926,7 @@ export default function Index() {
   }
 
   const verifyImage = async () => {
+    if (verifyingImage) return;
     setVerifyingImage(true);
     try {
       const verificationResponse = await fetch(`${BACKEND_URL}/verifyImage`, {
@@ -683,16 +977,28 @@ export default function Index() {
       }),
     ]).start(() => {
       setOverlayVisible(false);
-      handleStartAnalysis();
       getNextStep(6);
     });
   };
 
   const closeUploadModal = () => {
-    setModalVisible(false);
-    setTreatmentStep(0);
-    slideAnim.setValue(0);
-    setIsAnalyzing("Start Analysis");
+    setUploadModalVisible(false);
+    setNumDays(1);
+    setBroodless("no");
+    setSupersOn("no");
+    // only bring them back to beginning if they were before the upload step
+    if (uploadStep < 4) {
+      setUploadStep(0);
+      slideAnim.setValue(0);
+      setIsAnalyzing("Start Analysis");
+      setImageError(false);
+    } else {
+      setAlerts((prevAlerts) => {
+        const newAlerts = new Set(prevAlerts);
+        newAlerts.add("checkIncomplete");
+        return newAlerts;
+      });
+    }
   };
 
   const closeTreatmentModal = () => {
@@ -701,17 +1007,23 @@ export default function Index() {
     slideAnim.setValue(0);
   };
 
-  const getNextStep = (newStep: number) => {
-    if (treatmentStep === newStep) return;
+  const closeTreatmentManagementModal = () => {
+    setTreatmentManagementModalVisible(false);
+    setCurrentTreatmentView("Oxalic Acid");
+    slideAnim.setValue(0);
+  };
 
-    const direction = newStep > treatmentStep ? 1 : -1;
+  const getNextStep = (newStep: number) => {
+    if (uploadStep === newStep) return;
+
+    const direction = newStep > uploadStep ? 1 : -1;
 
     Animated.timing(slideAnim, {
       toValue: -direction * width,
       duration: 200,
       useNativeDriver: true,
     }).start(() => {
-      setTreatmentStep(newStep);
+      setUploadStep(newStep);
       slideAnim.setValue(direction * width);
       Animated.timing(slideAnim, {
         toValue: 0,
@@ -720,6 +1032,25 @@ export default function Index() {
       }).start();
     });
   };
+
+  const ToggleButton = ({
+    label,
+    selected,
+    onPress,
+  }: {
+    label: string;
+    selected: boolean;
+    onPress: () => void;
+  }) => (
+    <TouchableOpacity
+      onPress={onPress}
+      style={[styles.toggle, selected && styles.toggleSelected]}
+    >
+      <Text style={[styles.toggleText, selected && styles.toggleTextSelected]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
 
   const renderStep = (step: number) => {
     switch (step) {
@@ -781,7 +1112,7 @@ export default function Index() {
                     : "It's time to check your hive's mite levels. Scan your sticky board now."}
                 </Text>
               </View>
-              <Text>From Last Mite Check:</Text>
+              <Text>Mite Check Results:</Text>
               <View
                 style={{
                   flexDirection: "row",
@@ -790,35 +1121,58 @@ export default function Index() {
                   gap: 16,
                 }}
               >
-                <CircularProgress
-                  size={80}
-                  strokeWidth={10}
-                  progress={Math.min((latestMiteCount * 100) / 12, 100)} // 75% filled
-                  text={
-                    latestMiteCount > 12 ? "> 12" : latestMiteCount.toString()
-                  }
-                  color={latestMiteCount > 9 ? "#FF0014" : "#3AC0A0"}
-                  backgroundColor="#F0F0F0"
-                  duration={1500} // animation duration
-                />
+                <View style={{ justifyContent: "space-between" }}>
+                  <CircularProgress
+                    size={80}
+                    strokeWidth={10}
+                    progress={
+                      nextCheck > 0
+                        ? Math.min((latestMiteCount * 100) / 12, 100)
+                        : 0
+                    }
+                    text={
+                      nextCheck > 0
+                        ? latestMiteCount > 12
+                          ? "> 12"
+                          : latestMiteCount.toString()
+                        : "Update"
+                    }
+                    color={latestMiteCount > 9 ? "#FF0014" : "#3AC0A0"}
+                    backgroundColor="#F0F0F0"
+                    duration={1500} // animation duration
+                  />
+                  {nextCheck > 0 && (
+                    <Text
+                      style={{ color: "#949494", fontSize: 16, marginTop: 4 }}
+                    >
+                      Mites/Day
+                    </Text>
+                  )}
+                </View>
 
-                <View>
+                <View style={{ justifyContent: "space-between" }}>
                   <View style={{ flexDirection: "row", marginBottom: 8 }}>
                     <Text style={{ fontWeight: 700 }}>Status: </Text>
                     <Text
                       style={{
-                        color: `${latestMiteCount > 9 ? "#FF0014" : "#3AC0A0"}`,
+                        color: `${latestMiteCount > 9 || nextCheck < 0 ? "#FF0014" : "#3AC0A0"}`,
                         fontWeight: 700,
                       }}
                     >
-                      {latestMiteCount > 9 ? "Infested" : "Not Infested"}
+                      {nextCheck > 0
+                        ? latestMiteCount > 9
+                          ? "Infested"
+                          : "Not Infested"
+                        : "New Check Required"}
                     </Text>
                   </View>
-                  <View style={{ maxWidth: "80%" }}>
+                  <View style={{ maxWidth: "80%", gap: 8 }}>
                     <Text style={styles.subtitle}>
-                      {latestMiteCount > 9
-                        ? "Mite levels are above the threshold, treatment is advised."
-                        : "Mite levels are below the threshold, no action required."}
+                      {nextCheck > 0
+                        ? latestMiteCount > 9
+                          ? "Mite levels are above the threshold, treatment is advised."
+                          : "Mite levels are below the threshold, no action required."
+                        : "Previous infestation check is out of date, you can view your previous status in hive history. "}
                     </Text>
                     <Text style={{ color: "#949494" }}>
                       {`As of ${lastCheckDate.toLocaleDateString("en-US", {
@@ -859,7 +1213,7 @@ export default function Index() {
               <TouchableOpacity
                 style={[
                   styles.modalButton,
-                  (nextCheck < 0 || latestMiteCount <= 9) &&
+                  (nextCheck <= 0 || latestMiteCount <= 9) &&
                     styles.disabledButton,
                   { width: "47%", alignItems: "center" },
                 ]}
@@ -873,13 +1227,13 @@ export default function Index() {
                     return newAlerts;
                   });
                 }}
-                disabled={nextCheck < 0 || latestMiteCount <= 9}
+                disabled={nextCheck <= 0 || latestMiteCount <= 9}
               >
                 <Text
                   style={[
                     styles.modalButton,
                     styles.buttonText,
-                    (nextCheck < 0 || latestMiteCount <= 9) &&
+                    (nextCheck <= 0 || latestMiteCount <= 9) &&
                       styles.disabledButton,
                     { backgroundColor: "transparent" },
                   ]}
@@ -1092,6 +1446,7 @@ export default function Index() {
             <View
               style={{
                 marginBottom: 76,
+
                 flexDirection: "row",
                 justifyContent: "center",
                 width: "100%",
@@ -1155,7 +1510,13 @@ export default function Index() {
                   marginBottom: 40,
                 }}
               />
-              <Text style={{ color: COLOURS.darkGrey, alignSelf: "center" }}>
+              <Text
+                style={{
+                  color: COLOURS.darkGrey,
+                  alignSelf: "center",
+                  marginBottom: 40,
+                }}
+              >
                 Ensure the board is fully visible, clear, and well lit.
               </Text>
             </View>
@@ -1218,103 +1579,269 @@ export default function Index() {
         return (
           <View
             style={{
+              justifyContent: "space-between",
               flex: 1,
             }}
           >
-            <View
-              style={{
-                justifyContent: "space-between",
-                flex: 1,
-              }}
-            >
-              {/* Top content */}
-              <View style={{ gap: 24 }}>
-                <Text
-                  style={{
-                    borderTopColor: "#D8EAE9",
-                    borderTopWidth: 1,
-                    borderBottomColor: "#D8EAE9",
-                    borderBottomWidth: 1,
-                    paddingVertical: 10,
-                    color: COLOURS.darkGrey,
-                  }}
-                >
-                  Upload an image of your sticky board
-                </Text>
-
-                <Image
-                  source={{ uri: imageURI }}
-                  style={{
-                    width: 292,
-                    height: 332,
-                    alignSelf: "center",
-                    borderRadius: 12,
-                    borderColor: "#C5C6CC",
-                    borderWidth: 5,
-                  }}
-                />
-              </View>
-
-              {/* Buttons */}
-              <View
+            {/* Top content */}
+            <View style={{ gap: 24 }}>
+              <Text
                 style={{
-                  marginBottom: 76,
-                  gap: 24,
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  width: "100%",
-                  paddingRight: 4,
+                  borderTopColor: "#D8EAE9",
+                  borderTopWidth: 1,
+                  borderBottomColor: "#D8EAE9",
+                  borderBottomWidth: 1,
+                  paddingVertical: 10,
+                  color: COLOURS.darkGrey,
                 }}
               >
-                <TouchableOpacity
+                Upload an image of your sticky board
+              </Text>
+
+              <Image
+                source={{ uri: imageURI }}
+                style={{
+                  width: 292,
+                  height: 332,
+                  alignSelf: "center",
+                  borderRadius: 12,
+                  borderColor: "#C5C6CC",
+                  borderWidth: 5,
+                }}
+              />
+            </View>
+
+            {/* Buttons */}
+            <View
+              style={{
+                marginBottom: 76,
+                gap: 24,
+                flexDirection: "row",
+                justifyContent: "space-between",
+                width: "100%",
+                paddingRight: 4,
+              }}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  {
+                    display: "flex",
+                    width: "47%",
+                    alignItems: "center",
+                    backgroundColor: COLOURS.darkGrey,
+                  },
+                ]}
+                onPress={() => getNextStep(4)}
+              >
+                <Text
                   style={[
                     styles.modalButton,
-                    {
-                      display: "flex",
-                      width: "47%",
-                      alignItems: "center",
-                      backgroundColor: COLOURS.darkGrey,
-                    },
+                    styles.buttonText,
+                    { backgroundColor: "transparent" },
                   ]}
-                  onPress={() => getNextStep(4)}
                 >
-                  <Text
-                    style={[
-                      styles.modalButton,
-                      styles.buttonText,
-                      { backgroundColor: "transparent" },
-                    ]}
-                  >
-                    Back
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
+                  Back
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  {
+                    display: "flex",
+                    width: "47%",
+                    alignItems: "center",
+                  },
+                ]}
+                onPress={verifyImage}
+              >
+                <Text
                   style={[
                     styles.modalButton,
-                    {
-                      display: "flex",
-                      width: "47%",
-                      alignItems: "center",
-                    },
+                    styles.buttonText,
+                    { backgroundColor: "transparent" },
                   ]}
-                  onPress={verifyImage}
+                  disabled={verifyingImage}
                 >
-                  <Text
-                    style={[
-                      styles.modalButton,
-                      styles.buttonText,
-                      { backgroundColor: "transparent" },
-                    ]}
-                  >
-                    {verifyingImage ? "Loading" : "Confirm"}
-                  </Text>
-                </TouchableOpacity>
-              </View>
+                  {verifyingImage ? "Loading" : "Confirm"}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         );
 
       case 6:
+        return (
+          <View
+            style={{
+              justifyContent: "space-between",
+              flex: 1,
+            }}
+          >
+            <View>
+              <Text
+                style={{
+                  borderTopColor: "#D8EAE9",
+                  borderTopWidth: 1,
+                  borderBottomColor: "#D8EAE9",
+                  borderBottomWidth: 1,
+                  paddingBlock: 10,
+                }}
+              >
+                Questions about your hive
+              </Text>
+
+              <Text style={styles.description}>
+                Before we recommend a treatment, we have a couple more questions
+                about your hive’s conditions:
+              </Text>
+
+              {/* Sticky board days */}
+              <View style={styles.row}>
+                <Text style={styles.question}>
+                  How many days has your sticky board been on?
+                </Text>
+
+                <View style={styles.counter}>
+                  <TouchableOpacity
+                    style={[
+                      styles.circleButton,
+                      numDays === 1 && styles.disabled,
+                    ]}
+                    onPress={() => setNumDays((d) => Math.max(0, d - 1))}
+                    disabled={numDays == 1}
+                  >
+                    <Text
+                      style={[
+                        styles.circleText,
+                        numDays === 1 && { color: "#C5C6CC" },
+                      ]}
+                    >
+                      −
+                    </Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.counterBox}>
+                    <Text style={styles.counterText}>{numDays}</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.circleButton}
+                    onPress={() => setNumDays((d) => d + 1)}
+                    // disabled={numDays == 30}
+                  >
+                    <Text style={styles.circleText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Broodless */}
+              <View style={styles.row}>
+                <Text style={styles.question}>
+                  Is your hive mostly broodless?
+                </Text>
+
+                <View style={styles.toggleRow}>
+                  <ToggleButton
+                    label="No"
+                    selected={broodless === "no"}
+                    onPress={() => setBroodless("no")}
+                  />
+                  <ToggleButton
+                    label="Yes"
+                    selected={broodless === "yes"}
+                    onPress={() => setBroodless("yes")}
+                  />
+                </View>
+              </View>
+
+              {/* Honey supers */}
+              <View style={styles.row}>
+                <Text style={styles.question}>
+                  Are your honey supers on currently?
+                </Text>
+
+                <View style={styles.toggleRow}>
+                  <ToggleButton
+                    label="No"
+                    selected={supersOn === "no"}
+                    onPress={() => setSupersOn("no")}
+                  />
+                  <ToggleButton
+                    label="Yes"
+                    selected={supersOn === "yes"}
+                    onPress={() => setSupersOn("yes")}
+                  />
+                </View>
+              </View>
+            </View>
+            {/* Buttons */}
+            <View
+              style={{
+                marginBottom: 76,
+                gap: 15,
+                flexDirection: "row",
+                justifyContent: "space-between",
+                width: "100%",
+                paddingRight: 4,
+              }}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  {
+                    display: "flex",
+                    width: "47%",
+                    alignItems: "center",
+                    backgroundColor: COLOURS.darkGrey,
+                    paddingHorizontal: 5,
+                  },
+                ]}
+                onPress={() => getNextStep(5)}
+              >
+                <Text
+                  style={[
+                    styles.modalButton,
+                    styles.buttonText,
+                    { backgroundColor: "transparent" },
+                  ]}
+                >
+                  Back
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalButton,
+                  {
+                    display: "flex",
+                    width: "47%",
+                    alignItems: "center",
+                    paddingHorizontal: 5,
+                  },
+                ]}
+                onPress={() => {
+                  handleStartAnalysis();
+                  getNextStep(7);
+                  setNumDays(1);
+                  setBroodless("no");
+                  setSupersOn("no");
+                }}
+              >
+                <Text
+                  style={[
+                    styles.modalButton,
+                    styles.buttonText,
+                    { backgroundColor: "transparent", fontSize: 13 },
+                  ]}
+                  disabled={verifyingImage}
+                >
+                  Get Recommendation
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        );
+      case 7:
         return (
           <View
             style={{
@@ -1335,21 +1862,48 @@ export default function Index() {
               >
                 Checking sticky board
               </Text>
-              <View
-                style={{
-                  // flex: 1,
-                  justifyContent: "center",
-                  alignItems: "center",
-                  marginTop: 70,
-                  height: "auto",
-                }}
-              >
-                <CircularLoader
-                  duration={10000}
-                  isLoading={isAnalyzing != "Analysis Completed"}
-                  version="detection"
-                />
-              </View>
+              {isAnalyzing == "Analysis Completed" ? (
+                <View style={{ gap: 24 }}>
+                  <Text
+                    style={{
+                      paddingVertical: 10,
+                      color: COLOURS.darkGrey,
+                      textAlign: "center",
+                    }}
+                  >
+                    Varroa mites found with detection software:
+                  </Text>
+
+                  <Image
+                    source={{
+                      uri: `data:image/jpeg;base64,${detectionResultImageURI}`,
+                    }}
+                    style={{
+                      width: 292,
+                      height: 332,
+                      alignSelf: "center",
+                      borderRadius: 12,
+                      borderColor: "#C5C6CC",
+                      borderWidth: 5,
+                    }}
+                  />
+                </View>
+              ) : (
+                <View
+                  style={{
+                    justifyContent: "center",
+                    alignItems: "center",
+                    marginTop: 70,
+                    height: "auto",
+                  }}
+                >
+                  <CircularLoader
+                    duration={10000}
+                    isLoading={isAnalyzing != "Analysis Completed"}
+                    version="detection"
+                  />
+                </View>
+              )}
             </View>
 
             <View
@@ -1399,7 +1953,6 @@ export default function Index() {
         return null;
     }
   };
-
   const renderTreatment = () => {
     switch (treatment) {
       case "":
@@ -1536,7 +2089,7 @@ export default function Index() {
                 fontWeight: 600,
               }}
             >
-              {treatment.replace(
+              {treatmentApplied.replace(
                 /\w\S*/g,
                 (text) =>
                   text.charAt(0).toUpperCase() +
@@ -1548,15 +2101,36 @@ export default function Index() {
               </Text>
             </Text>
             <View style={{ justifyContent: "space-between", height: "80%" }}>
-              <Text>
-                {`The recommended treatment has been applied on ${lastCheckDate.toLocaleDateString(
-                  "en-US",
-                  {
-                    month: "long",
-                    day: "numeric",
-                  },
-                )} at ${new Date().toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}. You can view it in your hive history. `}
-              </Text>
+              <View style={{ gap: 20 }}>
+                <Text>
+                  {`${
+                    APPLICATION_QUANTITIES[
+                      treatmentApplied.replace(
+                        /\w\S*/g,
+                        (text) =>
+                          text.charAt(0).toUpperCase() +
+                          text.substring(1).toLowerCase(),
+                      ) as TreatmentType
+                    ]
+                  } mL of ${treatmentApplied.replace(
+                    /\w\S*/g,
+                    (text) =>
+                      text.charAt(0).toUpperCase() +
+                      text.substring(1).toLowerCase(),
+                  )} has been applied on ${lastCheckDate.toLocaleDateString(
+                    "en-US",
+                    {
+                      month: "long",
+                      day: "numeric",
+                    },
+                  )} at ${new Date().toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}. ${treatmentApplied.toLocaleLowerCase() !== "oxalic acid" ? `The subsequent applications will dispense on ${formatDates(getTreatmentDates(treatmentApplied).slice(1))}.` : ""}`}
+                </Text>
+                <Text>
+                  {treatmentApplied.toLocaleLowerCase() == "oxalic acid"
+                    ? "No further action is required."
+                    : `Be sure to remove foam pads on ${foamPadRemovalDate}. We’ll notify you.`}
+                </Text>
+              </View>
               <MaterialCommunityIcons
                 name="check-circle"
                 size={150}
@@ -1657,53 +2231,6 @@ export default function Index() {
           </View>
         );
       default: // if there is a treatment
-        // loading screen
-        if (sessionDetails.applied == "pending")
-          return (
-            <View
-              style={{
-                justifyContent: "space-between",
-                flex: 1,
-              }}
-            >
-              <View style={{ gap: 24 }}>
-                <Text
-                  style={{
-                    borderTopColor: "#D8EAE9",
-                    borderTopWidth: 1,
-                    borderBottomColor: "#D8EAE9",
-                    borderBottomWidth: 1,
-                    paddingBlock: 10,
-                    fontWeight: 600,
-                  }}
-                >
-                  Applying Treatment:{" "}
-                  <Text style={{ color: COLOURS.colour3, fontWeight: "bold" }}>
-                    {treatment.replace(
-                      /\w\S*/g,
-                      (text) =>
-                        text.charAt(0).toUpperCase() +
-                        text.substring(1).toLowerCase(),
-                    )}
-                  </Text>
-                </Text>
-                <View
-                  style={{
-                    justifyContent: "center",
-                    alignItems: "center",
-                    marginTop: 70,
-                    height: "auto",
-                  }}
-                >
-                  <CircularLoader
-                    duration={10000}
-                    isLoading={sessionDetails.applied == "pending"}
-                    version="treatment"
-                  />
-                </View>
-              </View>
-            </View>
-          );
         // treatment approval screen
         return (
           <View style={{ gap: 24 }}>
@@ -1734,10 +2261,7 @@ export default function Index() {
                 height: "85%",
               }}
             >
-              {(new Date().getFullYear() !==
-                new Date(lastCheckDate).getFullYear() ||
-                new Date().getMonth() !== new Date(lastCheckDate).getMonth() ||
-                new Date().getDate() !== new Date(lastCheckDate).getDate()) && (
+              {nextCheck <= 0 && (
                 <AlertBanner alertType="recommendationExpired" />
               )}
               <Text>
@@ -1747,13 +2271,38 @@ export default function Index() {
                     month: "long",
                     day: "numeric",
                   },
-                )}.`}
+                )}. `}
+                <Text
+                  style={{ textDecorationLine: "underline" }}
+                  onPress={() => {
+                    closeTreatmentModal();
+                    setCurrentTreatmentView(
+                      treatment.replace(
+                        /\w\S*/g,
+                        (text) =>
+                          text.charAt(0).toUpperCase() +
+                          text.substring(1).toLowerCase(),
+                      ) as TreatmentType,
+                    );
+                    setTreatmentManagementModalVisible(true);
+                  }}
+                >
+                  Learn more about this recommendation.
+                </Text>
               </Text>
-              {/* <Image
-                source={require("../../assets/treatInfo.png")}
-                style={{ alignSelf: "center" }}
-              /> */}
-              <TreatInfo style={{ alignSelf: "center" }} />
+              {nextCheck <= 0 ? (
+                <TreatInfo style={{ alignSelf: "center" }} />
+              ) : (
+                <TreatmentTimeline
+                  dates={getTreatmentDates(treatment)}
+                  treatment={treatment.replace(
+                    /\w\S*/g,
+                    (text) =>
+                      text.charAt(0).toUpperCase() +
+                      text.substring(1).toLowerCase(),
+                  )}
+                />
+              )}
               <View
                 style={{
                   display: "flex",
@@ -1765,13 +2314,8 @@ export default function Index() {
                 <ConfirmCheckbox
                   approvedTreatment={approvedTreatment}
                   setApprovedTreatment={setApprovedTreatment}
-                  disabled={
-                    new Date().getFullYear() !==
-                      new Date(lastCheckDate).getFullYear() ||
-                    new Date().getMonth() !==
-                      new Date(lastCheckDate).getMonth() ||
-                    new Date().getDate() !== new Date(lastCheckDate).getDate()
-                  }
+                  disabled={nextCheck <= 0}
+                  foamPads={treatment.toLocaleLowerCase() != "oxalic acid"}
                 />
                 <TouchableOpacity
                   style={[
@@ -1780,34 +2324,15 @@ export default function Index() {
                       width: "100%",
                       alignItems: "center",
                       backgroundColor:
-                        new Date().getFullYear() !==
-                          new Date(lastCheckDate).getFullYear() ||
-                        new Date().getMonth() !==
-                          new Date(lastCheckDate).getMonth() ||
-                        new Date().getDate() !==
-                          new Date(lastCheckDate).getDate() ||
-                        !approvedTreatment
+                        nextCheck <= 0 || !approvedTreatment
                           ? "#e0e0e0"
                           : COLOURS.colour3,
                     },
                   ]}
                   onPress={() => {
-                    setSessionDetails((sessionDetails) => ({
-                      ...sessionDetails,
-                      applied: "pending" as ApplicationType,
-                      approval: "approved" as ApprovalType,
-                    }));
                     sendTreatment(treatment);
                   }}
-                  disabled={
-                    new Date().getFullYear() !==
-                      new Date(lastCheckDate).getFullYear() ||
-                    new Date().getMonth() !==
-                      new Date(lastCheckDate).getMonth() ||
-                    new Date().getDate() !==
-                      new Date(lastCheckDate).getDate() ||
-                    !approvedTreatment
-                  }
+                  disabled={nextCheck <= 0 || !approvedTreatment}
                 >
                   <Text
                     style={[
@@ -1815,33 +2340,21 @@ export default function Index() {
                       styles.buttonText,
                       {
                         backgroundColor: "transparent",
-                        color:
-                          new Date().getFullYear() !==
-                            new Date(lastCheckDate).getFullYear() ||
-                          new Date().getMonth() !==
-                            new Date(lastCheckDate).getMonth() ||
-                          new Date().getDate() !==
-                            new Date(lastCheckDate).getDate()
-                            ? "#8b8b8b"
-                            : "#FFF",
+                        color: nextCheck <= 0 ? "#8b8b8b" : "#FFF",
                       },
                     ]}
                   >
                     Apply Treatment
                   </Text>
                 </TouchableOpacity>
-                {!(
-                  new Date().getFullYear() !==
-                    new Date(lastCheckDate).getFullYear() ||
-                  new Date().getMonth() !==
-                    new Date(lastCheckDate).getMonth() ||
-                  new Date().getDate() !== new Date(lastCheckDate).getDate()
-                ) && (
+                {nextCheck > 0 && (
                   <Text
                     onPress={() => {
                       closeTreatmentModal();
                       setAlerts((prevAlerts) => {
                         const newAlerts = new Set(prevAlerts);
+                        newAlerts.delete("checkComplete");
+                        newAlerts.delete("infestationDetected");
                         newAlerts.add("treatmentNotApplied");
                         return newAlerts;
                       });
@@ -1875,27 +2388,46 @@ export default function Index() {
   };
 
   const handleTakePhoto = async () => {
-    const result = await launchCamera({
-      mediaType: "photo",
-      cameraType: "back",
-      includeBase64: true, // optional (only if you need it for upload)
-    });
+    await Camera.requestCameraPermission();
+    setShowCamera(true);
+    // const result = await launchCamera({
+    //   mediaType: "photo",
+    //   cameraType: "back",
+    //   includeBase64: true, // optional (only if you need it for upload)
+    // });
 
-    if (result.didCancel) {
-      console.log("User cancelled camera");
-    } else if (result.errorCode) {
-      console.log(result.errorMessage);
-    } else if (result.assets && result.assets.length > 0) {
-      const source = result.assets![0]; //Unwrap the result assets and grab the first item (the captured image)
-      setEncodedImage(`data:${source.type};base64,${source.base64}`);
-      setImageURI(source.uri);
-      getNextStep(5);
-    }
+    // if (result.didCancel) {
+    //   console.log("User cancelled camera");
+    // } else if (result.errorCode) {
+    //   console.log(result.errorMessage);
+    // } else if (result.assets && result.assets.length > 0) {
+    //   const source = result.assets![0]; //Unwrap the result assets and grab the first item (the captured image)
+    //   setEncodedImage(`data:${source.type};base64,${source.base64}`);
+    //   setImageURI(source.uri);
+    //   getNextStep(5);
+    // }
   };
 
   const handleStartAnalysis = async () => {
     try {
+      if (isAnalyzing == "Analyzing") return;
+
+      // Guard: no image
+      if (!encodedImage) {
+        console.error("No image to analyze");
+        setIsAnalyzing("Analysis Failed");
+        return;
+      }
+
+      console.log("encodedImage prefix:", encodedImage.substring(0, 50));
+      console.log("encodedImage length:", encodedImage.length);
+
       setIsAnalyzing("Analyzing");
+      setAlerts((prevAlerts) => {
+        const newAlerts = new Set(prevAlerts);
+        newAlerts.delete("checkLevels");
+        return newAlerts;
+      });
 
       setSessionDetails((sessionDetails) => ({
         ...sessionDetails,
@@ -1909,68 +2441,85 @@ export default function Index() {
         body: JSON.stringify({
           temperature: temperature == "" ? "20" : temperature,
           image: encodedImage,
-          overrideTreatment: "formic acid", // type in any treatment name string here, or leave it none
-          numDays: numDays,
+          overrideTreatment: "thymol", // type in any treatment name string here, or leave it none
+          numDays: numDays.toString(),
+          broodless: broodless,
+          supersOn: supersOn,
         }),
       });
       if (response.ok) {
-        // Parse the response body as JSON
-        const jsonResponse = await response.json();
-        // Extract the actual response content
-        const responseData: {
+        const {
+          mite_count,
+          infestation,
+          treatment_recommendation,
+          delay,
+          temp_range,
+          annotated_image,
+        }: {
           mite_count: number;
           infestation: boolean;
           treatment_recommendation: string;
           delay: boolean;
-        } = jsonResponse; // Adjust this according to the structure of your response
+          temp_range: number[];
+          annotated_image: string;
+        } = await response.json();
 
-        // Now you can work with the actual response data
-        console.log(responseData);
-        const sessionUpdate = {
-          ...sessionDetails,
-          miteCount: responseData["mite_count"],
-          infestation: responseData["infestation"],
-          temperature: temperature,
-          treatment: responseData["treatment_recommendation"],
-          delay: responseData["delay"],
-          miteCheckStatus: "success" as MiteCheckStatusType,
-        };
-        console.log(sessionUpdate);
-        setSessionDetails(sessionUpdate);
         const currSession = uuid.v4();
-        setSessionId(currSession);
-        userStorage.set("latestSession", currSession);
-        setTreatment(responseData["treatment_recommendation"]);
-        if (responseData["infestation"]) {
-          setAlerts((prevAlerts) => {
-            const newAlerts = new Set(prevAlerts);
-            newAlerts.add("infestationDetected");
-            return newAlerts;
-          });
-        } else {
-          setlastNotInfested(0);
-        }
+        setDetectionResultImageURI(annotated_image);
 
-        setInfestation(responseData["infestation"]);
-        console.log(responseData["mite_count"]);
-        setLatestMiteCount(responseData["mite_count"]);
+        setSessionDetails((prev) => ({
+          ...prev,
+          miteCount: mite_count,
+          treatment: treatment_recommendation,
+          miteCheckStatus: "success" as MiteCheckStatusType,
+        }));
+
+        setAlerts((prev) => {
+          const alerts = new Set(prev);
+          alerts.add("recommendationAvailable");
+          if (infestation) alerts.add("infestationDetected");
+          return alerts;
+        });
+
+        setSessionId(currSession);
+
+        setTreatment(treatment_recommendation);
+        setInfestation(infestation);
+        setLatestMiteCount(mite_count);
         setNextCheck(30);
         setTreatmentUnread(true);
-        setAlerts((prevAlerts) => {
-          const newAlerts = new Set(prevAlerts);
-          newAlerts.add("recommendationAvailable");
-          return newAlerts;
-        });
         setLastCheckDate(new Date());
-        // if infestation is false, also schedule a notification 3 months from now
-        if (!responseData["infestation"]) {
-          await schedulePushNotification(
-            "It's time to check your hive!",
-            "Take a quick picture of your sticky board to start the process",
-            THREE_MONTHS,
-          ); // 3 months in seconds
-        }
         setIsAnalyzing("Analysis Completed");
+        userStorage.set(
+          new Date().toISOString(),
+          JSON.stringify({
+            title: "Mite Check Completed",
+            body: infestation
+              ? "Infestation Detected"
+              : "No Infestation Detected",
+          }),
+        );
+
+        if (!infestation) {
+          setlastNotInfested(0);
+          await schedulePushNotification(
+            "Check Mites Levels",
+            "It’s time for your monthly sticky board check to monitor hive health.",
+            ONE_MONTH,
+          );
+        } else if (delay) {
+          // set a temperature tracker that expires in 30 days
+          const expiryDate = new Date();
+          expiryDate.setSeconds(expiryDate.getSeconds() + ONE_MONTH);
+          delayTreatmentStorage.set(
+            treatment_recommendation,
+            JSON.stringify({
+              expiry: expiryDate.toISOString(),
+              minTemp: temp_range[0],
+              maxTemp: temp_range[1],
+            }),
+          );
+        }
       } else {
         // Handle error response
         console.error("Error:", response.statusText);
@@ -1987,6 +2536,18 @@ export default function Index() {
     }
   };
 
+  useEffect(() => {
+    // completed analysis but modal closed
+    if (!uploadModalVisible && isAnalyzing == "Analysis Completed") {
+      setAlerts((prevAlerts) => {
+        const newAlerts = new Set(prevAlerts);
+        newAlerts.add("checkComplete");
+        return newAlerts;
+      });
+      getNextStep(0);
+    }
+  }, [uploadModalVisible, isAnalyzing]);
+
   const { width, height } = Dimensions.get("window");
 
   const getTimeOfDay = () => {
@@ -2000,7 +2561,18 @@ export default function Index() {
     }
     return "Evening";
   };
-
+  if (showCamera)
+    return (
+      <StickyBoardCamera
+        onPhoto={(uri, base64) => {
+          setEncodedImage(`data:image/jpeg;base64,${base64}`);
+          setImageURI(uri);
+          setShowCamera(false);
+          getNextStep(5);
+        }}
+        onClose={() => setShowCamera(false)}
+      />
+    );
   return (
     <ScrollView
       style={styles.page}
@@ -2039,8 +2611,10 @@ export default function Index() {
       {/* Summary */}
       <View
         style={{
-          backgroundColor: COLOURS.tertiary,
+          backgroundColor: "#FFF7E6",
           borderRadius: 12,
+          borderColor: COLOURS.tertiary,
+          borderWidth: 3,
           paddingHorizontal: 16,
           paddingBlock: 20,
           marginTop: 20,
@@ -2099,7 +2673,7 @@ export default function Index() {
       <View style={{ marginBlock: 20, width: "100%", gap: 10 }}>
         <ActionButton
           text="Check Infestation Status"
-          onPressFunction={() => setModalVisible(true)}
+          onPressFunction={() => setUploadModalVisible(true)}
           disabled={new Date().getMonth() < 2 || new Date().getMonth() > 11}
         />
         <ActionButton
@@ -2118,23 +2692,13 @@ export default function Index() {
         />
         <ActionButton
           text="Treatment Management"
-          onPressFunction={() => null}
+          onPressFunction={() => setTreatmentManagementModalVisible(true)}
         />
         <ActionButton text="Resources" onPressFunction={() => null} />
-        <ActionButton
-          text="Reset (testing)"
-          onPressFunction={() => {
-            setlastNotInfested(32);
-            setNextCheck(-1);
-            setLastCheckDate(new Date("2026-01-26"));
-            setAlerts(new Set());
-            setApprovedTreatment(false);
-          }}
-        />
 
         {/* Sticky Board Modal */}
         <Modal
-          isVisible={isModalVisible}
+          isVisible={uploadModalVisible}
           onBackdropPress={closeUploadModal}
           onBackButtonPress={closeUploadModal}
           onSwipeComplete={closeUploadModal}
@@ -2153,7 +2717,7 @@ export default function Index() {
             <View style={styles.handle} />
             {/* header */}
             <Text style={styles.title}>
-              {treatmentStep == 0 ? "Infestation Status" : "Scan Sticky Board"}
+              {uploadStep == 0 ? "Infestation Status" : "Scan Sticky Board"}
             </Text>
 
             <Animated.View
@@ -2162,7 +2726,7 @@ export default function Index() {
                 transform: [{ translateX: slideAnim }],
               }}
             >
-              {renderStep(treatmentStep)}
+              {renderStep(uploadStep)}
               {/* Animated Overlay */}
               {overlayVisible && (
                 <Animated.View
@@ -2227,6 +2791,227 @@ export default function Index() {
             >
               {renderTreatment()}
             </Animated.View>
+          </View>
+        </Modal>
+        {/* Treatment Management Modal */}
+        <Modal
+          isVisible={treatmentManagementModalVisible}
+          onBackdropPress={closeTreatmentManagementModal}
+          onBackButtonPress={closeTreatmentManagementModal}
+          onSwipeComplete={closeTreatmentManagementModal}
+          swipeDirection={"down"}
+          swipeThreshold={100}
+          style={styles.modal}
+          animationIn={"slideInUp"}
+          animationOut={"slideOutDown"}
+          backdropOpacity={0.4}
+          backdropTransitionOutTiming={0}
+          hideModalContentWhileAnimating={true}
+          propagateSwipe
+        >
+          <View style={styles.sheet}>
+            {/* drag handle */}
+            <View style={styles.handle} />
+            {/* header */}
+            <Text style={styles.title}>Treatment Management</Text>
+            <Text style={[styles.subtitle]}>
+              This page will show remaining treatment levels and explain when
+              each treatment works best.
+            </Text>
+            {/* buttons */}
+            <View
+              style={{
+                flexDirection: "row",
+                borderBottomColor: "#D9D9D9",
+                borderBottomWidth: 1,
+                justifyContent: "space-between",
+                paddingBlock: 24,
+              }}
+            >
+              {["Oxalic Acid", "Thymol", "Formic Acid"].map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={[
+                    currentTreatmentView == t
+                      ? {
+                          backgroundColor: COLOURS.colour3,
+                        }
+                      : { backgroundColor: "white" },
+                    {
+                      borderRadius: 12,
+                      borderColor: "#FFEEC3",
+                      borderWidth: 1,
+                      boxShadow: "0px 4px 4px 0px rgba(0, 0, 0, 0.25)",
+                      width: "30%",
+                      height: 60,
+                      alignItems: "center",
+                      display: "flex",
+                      justifyContent: "center",
+                      paddingHorizontal: 12,
+                    },
+                  ]}
+                  onPress={() => setCurrentTreatmentView(t as TreatmentType)}
+                >
+                  <Text
+                    style={[
+                      styles.h2,
+                      currentTreatmentView == t
+                        ? { color: "white" }
+                        : { color: "black" },
+                      { textAlign: "center" },
+                    ]}
+                  >
+                    {t}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {/* content specific to treatment */}
+
+            <View
+              style={{
+                justifyContent: "space-between",
+                flex: 1,
+                marginTop: 24,
+              }}
+            >
+              {/* status */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  marginBottom: 50,
+                  justifyContent: "space-between",
+                  gap: 16,
+                }}
+              >
+                <CircularProgress
+                  size={80}
+                  strokeWidth={10}
+                  progress={reservoirQuantity[currentTreatmentView]}
+                  text={`${reservoirQuantity[currentTreatmentView]}% Full`}
+                  color={COLOURS.tertiary}
+                  backgroundColor="#F0F0F0"
+                  duration={1500} // animation duration
+                />
+
+                <View style={{ justifyContent: "space-between" }}>
+                  <View style={{ flexDirection: "row", marginBottom: 8 }}>
+                    <Text style={{ fontWeight: 700, fontSize: 16 }}>
+                      Status:{" "}
+                    </Text>
+                    <Text
+                      style={{
+                        color: COLOURS.colour3,
+                        fontWeight: 700,
+                        fontSize: 16,
+                      }}
+                    >
+                      {reservoirStatus[currentTreatmentView]}
+                    </Text>
+                  </View>
+                  <View style={{ maxWidth: "80%", gap: 8 }}>
+                    <Text style={styles.subtitle}>
+                      {reservoirStatus[currentTreatmentView] == "Empty"
+                        ? "The reservoir does not have enough solution for treatment. Refill is required."
+                        : "The reservoir has enough solution for future treatments. No action needed."}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+              {/* button */}
+              <TouchableOpacity
+                style={{
+                  flexDirection: "row",
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: COLOURS.colour3,
+                  paddingBlock: 12,
+                  paddingHorizontal: 5,
+                }}
+                onPress={() => {
+                  reservoirStorage.set(currentTreatmentView, 0);
+                  setReservoirQuantity((prev) => ({
+                    ...prev,
+                    [currentTreatmentView]: 100,
+                  }));
+                  setReservoirStatus((prev) => ({
+                    ...prev,
+                    [currentTreatmentView]: "Full",
+                  }));
+                  userStorage.set(
+                    new Date().toISOString(),
+                    JSON.stringify({
+                      title: "Reservoir Refilled",
+                      body: currentTreatmentView,
+                    }),
+                  );
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="water-check"
+                  size={24}
+                  color={COLOURS.colour3}
+                />
+                <Text
+                  style={{
+                    marginLeft: 8,
+                    fontWeight: 700,
+                    color: COLOURS.colour3,
+                    fontSize: 16,
+                  }}
+                >
+                  I've refilled {currentTreatmentView}
+                </Text>
+              </TouchableOpacity>
+              {/* text */}
+              <View style={{ height: "60%", marginBlock: 10 }}>
+                <Text
+                  style={[styles.h2, { color: COLOURS.darkGrey, fontSize: 20 }]}
+                >
+                  Treatment Information:
+                </Text>
+                <Text style={{ marginBlock: 12 }}>
+                  {currentTreatmentView == "Oxalic Acid"
+                    ? "Oxalic Acid is most effective when bees are clustered but not tightly packed due to extreme cold. It works best when mites are exposed (no capped brood)."
+                    : currentTreatmentView == "Formic Acid"
+                      ? "Formic Acid is most effective when brood is present and mites are reproducing inside capped cells."
+                      : "Thymol is most effective in warmer conditions when vaporization can occur steadily within the hive. "}
+                </Text>
+                <Text>
+                  <Text style={{ fontWeight: 700 }}>
+                    Operating Temperature:{" "}
+                  </Text>
+                  {currentTreatmentView == "Oxalic Acid"
+                    ? "Above 4.4°C"
+                    : currentTreatmentView == "Formic Acid"
+                      ? "10°C - 26°C"
+                      : "15°C – 30°C"}
+                </Text>
+                <Text style={{ marginBlock: 24 }}>
+                  <Text style={{ fontWeight: 700 }}>
+                    Purchasing Instructions:{" "}
+                  </Text>
+                  {currentTreatmentView == "Oxalic Acid"
+                    ? "Buy ready mixed Oxalic acid, commercially sold as Api-Bioxal liquid."
+                    : currentTreatmentView == "Formic Acid"
+                      ? "Buy liquid Formic Acid  products from a verified beekeeping retailer. Follow the product label carefully to ensure proper dosage and ventilation requirements are met."
+                      : "Buy liquid or gel thymol treatment products from a verified beekeeping retailer. Follow label instructions for handling. "}
+                </Text>
+                <Text>
+                  To learn more, visit{" "}
+                  <Text
+                    style={{ textDecorationLine: "underline" }}
+                    onPress={() =>
+                      Linking.openURL(
+                        "https://www.ontario.ca/page/treatment-options-honey-bee-pests-and-diseases-ontario#section-3",
+                      )
+                    }
+                  >
+                    Varroa mites
+                  </Text>
+                </Text>
+              </View>
+            </View>
           </View>
         </Modal>
       </View>

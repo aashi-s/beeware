@@ -7,6 +7,7 @@ export default function Layout() {
         headerShown: false,
       }}
     >
+      <Stack.Screen name="(onboarding)" />
       <Stack.Screen name="(tabs)" />
     </Stack>
   );

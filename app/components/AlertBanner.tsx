@@ -15,7 +15,8 @@ type AlertType =
   | "treatmentTemporarilyUnavailable"
   | "recommendationExpired"
   | "treatmentNotApplied"
-  | "imageNotClear";
+  | "imageNotClear"
+  | "nextRoundReady";
 const AlertBanner = ({
   alertType,
   closeAlert,
@@ -114,7 +115,11 @@ const AlertBanner = ({
       title = "No Treatment Applied";
       text = "You've opted out of applying treatment.";
       break;
-
+    case "nextRoundReady":
+      level = "general";
+      title = "It's time to apply treatment";
+      text = "The next dose of treatment is being applied.";
+      break;
     default:
       level = "general";
       title = "No Treatment Applied";
@@ -168,7 +173,6 @@ const AlertBanner = ({
               ? styles.error
               : styles.generalAlert,
         styles.alert,
-        !closeAlert && { marginTop: 0 },
       ]}
     >
       {getIcon(level)}

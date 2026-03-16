@@ -68,7 +68,8 @@
             "node_modules/@expo-google-fonts/roboto/600SemiBold/Roboto_600SemiBold.ttf"
           ]
         }
-      ]
+      ],
+      "react-native-vision-camera"
     ],
     "experiments": {
       "typedRoutes": true,
