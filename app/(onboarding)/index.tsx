@@ -13,6 +13,8 @@ import {
 import OnboardingBackground from "../components/OnboardingBackground";
 import OnboardingDetection from "../components/OnboardingDetection";
 import OnboardingFinal from "../components/OnboardingFinal";
+import OnboardingSetupOne from "../components/OnboardingSetupOne";
+import OnboardingSetupTwo from "../components/OnboardingSetupTwo";
 import OnboardingSolution from "../components/OnboardingSolution";
 import OnboardingTreatment from "../components/OnboardingTreatment";
 import OnboardingWelcome from "../components/OnboardingWelcome";
@@ -39,6 +41,15 @@ const pages = [
   {
     key: "solution",
     Component: OnboardingSolution,
+  },
+
+  {
+    key: "setupOne",
+    Component: OnboardingSetupOne,
+  },
+  {
+    key: "setupTwo",
+    Component: OnboardingSetupTwo,
   },
   {
     key: "final",

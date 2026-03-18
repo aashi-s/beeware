@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -19,17 +20,26 @@ import { COLOURS } from "../styles/styles";
 const Settings = () => {
   const [pushEnabled, setPushEnabled] = useState(true);
   const [termsModalVisible, setTermsModalVisible] = useState(false);
+  const [changePasswordModalVisible, setChangePasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const handleLogout = () => {
     userStorage.set("reset", JSON.stringify({ value: true }));
     router.replace("/(onboarding)");
   };
+
+  const handleRestart = () => {};
   return (
     <ScrollView style={styles.page}>
       {/* Header */}
       <Text style={styles.header}>Settings</Text>
 
       {/* User Card */}
-      <View style={styles.userCard}>
+      <TouchableOpacity
+        style={styles.userCard}
+        onPress={() => setChangePasswordModal(true)}
+      >
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>U</Text>
         </View>
@@ -43,7 +53,7 @@ const Settings = () => {
           color={"#FFFFFF"}
           style={{ marginLeft: 100 }}
         />
-      </View>
+      </TouchableOpacity>
 
       {/* Notifications */}
       <Text style={styles.sectionTitle}>NOTIFICATIONS</Text>
@@ -174,7 +184,7 @@ const Settings = () => {
         />
       </TouchableOpacity>
       {/* Restart Device */}
-      <TouchableOpacity style={styles.card}>
+      <TouchableOpacity style={styles.card} onPress={handleRestart}>
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <View>
             <Text style={styles.restartTitle}>Restart Device</Text>
@@ -251,6 +261,68 @@ const Settings = () => {
           </Text>
         </View>
       </Modal>
+
+      {/* Change password Modal */}
+      <Modal
+        isVisible={changePasswordModalVisible}
+        onBackdropPress={() => setChangePasswordModal(false)}
+        onBackButtonPress={() => setChangePasswordModal(false)}
+        onSwipeComplete={() => setChangePasswordModal(false)}
+        swipeDirection={"down"}
+        swipeThreshold={100}
+        style={styles.modal}
+        animationIn={"slideInUp"}
+        animationOut={"slideOutDown"}
+        backdropOpacity={0.4}
+        backdropTransitionOutTiming={0}
+        hideModalContentWhileAnimating={true}
+        propagateSwipe
+      >
+        <View style={styles.pwSheet}>
+          {/* drag handle */}
+          <View style={styles.handle} />
+          {/* header */}
+          <Text style={[styles.title, { fontWeight: 900 }]}>
+            Change Password
+          </Text>
+          <Text style={styles.label}>Current password</Text>
+          <TextInput
+            secureTextEntry
+            style={styles.input}
+            value={currentPassword}
+            onChangeText={setCurrentPassword}
+          />
+
+          <Text style={styles.label}>New password</Text>
+          <TextInput
+            secureTextEntry
+            style={styles.input}
+            value={newPassword}
+            onChangeText={setNewPassword}
+          />
+
+          <Text style={styles.label}>Confirm new password</Text>
+          <TextInput
+            secureTextEntry
+            style={styles.input}
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+          />
+
+          {/* button */}
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => {
+              setCurrentPassword("");
+              setNewPassword("");
+              setConfirmPassword("");
+              setChangePasswordModal(false);
+            }}
+          >
+            <Text style={styles.buttonText}>Update Password</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -321,6 +393,14 @@ const styles = StyleSheet.create({
     padding: 20,
     elevation: 0,
   },
+  pwSheet: {
+    height: height * 0.62,
+    backgroundColor: "white",
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    elevation: 0,
+  },
   handle: {
     width: 40,
     height: 5,
@@ -348,6 +428,43 @@ const styles = StyleSheet.create({
     color: "#E27D3D",
     fontSize: 16,
     fontWeight: "700",
+  },
+  closeText: {
+    fontSize: 22,
+    color: "#555",
+  },
+
+  label: {
+    marginTop: 16,
+    marginBottom: 6,
+    fontSize: 16,
+    color: "#7A7A7A",
+    fontWeight: 500,
+  },
+
+  input: {
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: "#FAFAFA",
+    paddingHorizontal: 16,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+
+  button: {
+    marginTop: 26,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: "#D86F1B",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  buttonText: {
+    color: "white",
+    fontSize: 18,
+    fontWeight: "600",
   },
 });
 

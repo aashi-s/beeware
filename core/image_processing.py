@@ -183,6 +183,7 @@ def process_dng(file_path):
 def decode_image(image):
     if not image:
         return None
+    base64_str = image
     # If the base64 string includes a prefix like "data:image/png;base64,", remove it:
     if image.startswith("data:image"):
         base64_str = image.split(",")[1]
@@ -233,78 +234,170 @@ class VarroaDetector:
         self.output_path = None
         self.image_to_analyze = None
 
+    # def verify_image(self, encodedImage=None):
+    #     try:
+
+    #         def variance_of_laplacian(image):
+    #             return cv2.Laplacian(image, cv2.CV_64F).var()
+
+    #         image = decode_image(encodedImage)
+
+    #         if image is None:
+    #             return {"verified": False}
+
+    #         h, w = image.shape[:2]
+
+    #         # Reject very small images
+    #         if h < 100 or w < 100:
+    #             print("too small")
+    #             return {"verified": False}
+
+    #         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    #         brightness = np.mean(gray)
+    #         contrast = gray.std()
+
+    #         # Reject completely dark or overexposed images
+    #         if brightness < 40 or brightness > 220:
+    #             print("dark or overexposed", brightness)
+    #             return {"verified": False}
+
+    #         # Reject extremely low contrast images
+    #         if contrast < 20:
+    #             print("low contrast")
+    #             return {"verified": False}
+
+    #         # Try enhancement if slightly dark
+    #         trials = 0
+    #         while brightness < 100 and trials < 2:
+    #             trials += 1
+
+    #             lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+
+    #             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    #             lab[:, :, 0] = clahe.apply(lab[:, :, 0])
+
+    #             image = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+    #             # gamma brighten shadows
+    #             gamma = 0.7
+    #             image = np.clip((image / 255.0) ** gamma * 255, 0, 255).astype(np.uint8)
+
+    #             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    #             brightness = np.mean(gray)
+
+    #         # Blur detection
+    #         fm = variance_of_laplacian(gray)
+
+    #         if fm < 80:
+    #             print("too blurry", fm)
+    #             return {"verified": False}
+
+    #         # Detect glare / flash saturation
+    #         _, binary_image = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY)
+    #         bright_ratio = np.sum(binary_image == 255) / (h * w)
+
+    #         if bright_ratio > 0.2:  # too much glare
+    #             print(bright_ratio, "glare")
+    #             return {"verified": False}
+
+    #         return {"verified": True}
+
+    #     except Exception as e:
+    #         print("Error in processing:", str(e))
+    #         return {"verified": False}
+
     def verify_image(self, encodedImage=None):
         try:
-
-            def variance_of_laplacian(image):
-                return cv2.Laplacian(image, cv2.CV_64F).var()
-
             image = decode_image(encodedImage)
-
             if image is None:
-                return {"verified": False}
+                return {"verified": False, "reason": "Please resubmit your image."}
 
             h, w = image.shape[:2]
 
-            # Reject very small images
             if h < 100 or w < 100:
-                print("too small")
-                return {"verified": False}
+                return {
+                    "verified": False,
+                    "reason": "Please try again with a bigger image.",
+                }
+
+            aspect_ratio = w / h
+            if aspect_ratio < 0.3 or aspect_ratio > 5.0:
+                return {
+                    "verified": False,
+                    "reason": "Please try again with an appropriate aspect ratio.",
+                }
 
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
             brightness = np.mean(gray)
             contrast = gray.std()
 
-            # Reject completely dark or overexposed images
             if brightness < 40 or brightness > 220:
-                print("dark or overexposed", brightness)
-                return {"verified": False}
+                return {
+                    "verified": False,
+                    "reason": "Please improve the exposure and try again.",
+                }
 
-            # Reject extremely low contrast images
             if contrast < 20:
-                print("low contrast")
-                return {"verified": False}
+                return {
+                    "verified": False,
+                    "reason": "Please increase contrast and try again.",
+                }
 
-            # Try enhancement if slightly dark
+            # Enhancement loop (on a copy)
+            enhanced = image.copy()
             trials = 0
-            while brightness < 100 and trials < 2:
+            while (
+                np.mean(cv2.cvtColor(enhanced, cv2.COLOR_BGR2GRAY)) < 100 and trials < 2
+            ):
                 trials += 1
-
-                lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-
+                lab = cv2.cvtColor(enhanced, cv2.COLOR_BGR2LAB)
                 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
                 lab[:, :, 0] = clahe.apply(lab[:, :, 0])
-
-                image = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-
-                # gamma brighten shadows
+                enhanced = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
                 gamma = 0.7
-                image = np.clip((image / 255.0) ** gamma * 255, 0, 255).astype(np.uint8)
+                enhanced = np.clip((enhanced / 255.0) ** gamma * 255, 0, 255).astype(
+                    np.uint8
+                )
 
-                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                brightness = np.mean(gray)
+            gray = cv2.cvtColor(enhanced, cv2.COLOR_BGR2GRAY)
 
-            # Blur detection
-            fm = variance_of_laplacian(gray)
+            fm = cv2.Laplacian(gray, cv2.CV_64F).var()
+            if fm < 80:
+                return {
+                    "verified": False,
+                    "reason": "Please retry with a less blurry image.",
+                }
 
-            if fm < 10:
-                print("too blurry", fm)
-                return {"verified": False}
+            noise = cv2.meanStdDev(gray)[1][0][0]
+            if noise > 80:
+                return {
+                    "verified": False,
+                    "reason": "Please retry with brighter lighting.",
+                }
 
-            # Detect glare / flash saturation
+            edges = cv2.Canny(gray, 50, 150)
+            if np.sum(edges > 0) / (h * w) < 0.01:
+                return {
+                    "verified": False,
+                    "reason": "Please retry with a different image.",
+                }
+
+            # Glare check with connected components
             _, binary_image = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY)
-            bright_ratio = np.sum(binary_image == 255) / (h * w)
-
-            if bright_ratio > 0.2:  # too much glare
-                print("glare")
-                return {"verified": False}
+            num_labels, _, stats, _ = cv2.connectedComponentsWithStats(binary_image)
+            for i in range(1, num_labels):
+                if stats[i, cv2.CC_STAT_AREA] > (h * w * 0.05):
+                    return {
+                        "verified": False,
+                        "reason": "Please retry with less glare.",
+                    }
 
             return {"verified": True}
 
         except Exception as e:
-            print("Error in processing:", str(e))
-            return {"verified": False}
+            print("Error in verify_image:", str(e))
+            return {"verified": False, "reason": "Please retry."}
 
     def get_all_images(self, folder):
         """Recursively get all JPG and DNG files from folder and subfolders"""
@@ -351,6 +444,7 @@ class VarroaDetector:
                 "treatment_recommendation": "null",
                 "delay": False,
                 "temp_range": [],
+                "annotated_image": self.annotated_image,
             }
         if honey_supers_on:
             if temp >= 10 and temp <= 26:
@@ -358,12 +452,14 @@ class VarroaDetector:
                     "treatment_recommendation": "formic acid",
                     "delay": False,
                     "temp_range": [],
+                    "annotated_image": self.annotated_image,
                 }
             else:
                 return {
                     "treatment_recommendation": "formic acid",
                     "delay": True,
                     "temp_range": [10, 26],
+                    "annotated_image": self.annotated_image,
                 }
         else:
             if hive_broodless:
@@ -372,12 +468,14 @@ class VarroaDetector:
                         "treatment_recommendation": "oxalic acid",
                         "delay": False,
                         "temp_range": [],
+                        "annotated_image": self.annotated_image,
                     }
                 else:
                     return {
                         "treatment_recommendation": "oxalic acid",
                         "delay": True,
                         "temp_range": [4.4, 100],
+                        "annotated_image": self.annotated_image,
                     }
             else:
                 if temp > 26 and temp <= 30:
@@ -385,6 +483,7 @@ class VarroaDetector:
                         "treatment_recommendation": "thymol",
                         "delay": False,
                         "temp_range": [],
+                        "annotated_image": self.annotated_image,
                     }
                 elif temp > 15 and temp <= 26:
                     if last_treatment == "formic acid":
@@ -392,24 +491,28 @@ class VarroaDetector:
                             "treatment_recommendation": "thymol",
                             "delay": False,
                             "temp_range": [],
+                            "annotated_image": self.annotated_image,
                         }
                     else:
                         return {
                             "treatment_recommendation": "formic acid",
                             "delay": False,
                             "temp_range": [],
+                            "annotated_image": self.annotated_image,
                         }
                 elif temp >= 10 and temp <= 15:
                     return {
                         "treatment_recommendation": "formic acid",
                         "delay": False,
                         "temp_range": [],
+                        "annotated_image": self.annotated_image,
                     }
                 else:
                     return {
                         "treatment_recommendation": "formic acid",
                         "delay": True,
                         "temp_range": [10, 15],
+                        "annotated_image": self.annotated_image,
                     }
 
     def select_folder(
@@ -466,14 +569,15 @@ class VarroaDetector:
             # # Run detection
             self.run_detection()
 
-            self.mite_count = self.mite_count // numDays
+            self.mite_count = max(self.mite_count // numDays, 12)
             if overrideTreatment and self.mite_count > 9:
                 return {
                     "infestation": True,
                     "treatment_recommendation": overrideTreatment,
-                    "mite_count": 100,
+                    "mite_count": self.mite_count,
                     "delay": False,
                     "temp_range": [],
+                    "annotated_image": self.annotated_image,
                 }
             if (
                 self.mite_count >= 9 and curr_date.month >= 3 and curr_date.month < 8
@@ -633,7 +737,7 @@ class VarroaDetector:
             results = self.model(
                 source=image,
                 imgsz=(6016),
-                max_det=2000,
+                max_det=2100,
                 conf=0.1,
                 iou=0.5,
                 save=False,
@@ -665,6 +769,13 @@ class VarroaDetector:
                 _, buffer = cv2.imencode(".jpg", annotated)
                 annotated_base64 = base64.b64encode(buffer).decode("utf-8")
                 self.annotated_image = annotated_base64
+
+                # save annotated image locally with datetime filename
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                cv2.imwrite(os.path.join(script_dir, f"{timestamp}.jpg"), annotated)
+                os.makedirs("snapshots", exist_ok=True)
+                cv2.imwrite(f"snapshots/{timestamp}.jpg", annotated)
 
             print("\nTotal varroas detected:", self.mite_count)
             print("Analysis complete")

@@ -88,8 +88,6 @@ yarn-error.*
 .env.*
 !.env.example
 
-google-services.json
-
 # typescript
 *.tsbuildinfo
 

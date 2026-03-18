@@ -8,13 +8,16 @@ interface CircularLoaderProps {
   duration?: number;
   isLoading: boolean;
   version: "detection" | "treatment";
+  error?: boolean;
 }
 
 const CircularLoader: React.FC<CircularLoaderProps> = ({
   duration = 5000,
   isLoading,
   version,
+  error = false,
 }) => {
+  const animatedValue = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     if (!isLoading) {
       Animated.timing(animatedValue, {
@@ -22,11 +25,13 @@ const CircularLoader: React.FC<CircularLoaderProps> = ({
         duration: 400,
         useNativeDriver: true,
       }).start(() => {
-        setCompleted(true);
+        if (!error) {
+          setCompleted(true);
+        }
         setTextIndex(-1);
       });
     }
-  }, [isLoading]);
+  }, [isLoading, error]);
 
   const AnimatedCircle = Animated.createAnimatedComponent(Circle);
   const [completed, setCompleted] = useState(false);
@@ -45,22 +50,20 @@ const CircularLoader: React.FC<CircularLoaderProps> = ({
           "Activating pump...",
         ];
 
-  const animatedValue = useRef(new Animated.Value(0)).current;
-
   const size = 120;
   const strokeWidth = 10;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
 
   useEffect(() => {
-    if (completed) return;
+    if (completed || error) return;
 
     const interval = setInterval(() => {
       setTextIndex((prev) => (prev + 1) % texts.length);
     }, duration / texts.length);
 
     return () => clearInterval(interval);
-  }, [completed, duration]);
+  }, [completed, error, duration]);
 
   useEffect(() => {
     // Stage 1: animate slowly to 90%
@@ -95,7 +98,7 @@ const CircularLoader: React.FC<CircularLoaderProps> = ({
             cx={size / 2}
             cy={size / 2}
             r={radius}
-            stroke="#FDD835"
+            stroke={error ? "#FF0014" : "#FDD835"}
             strokeWidth={strokeWidth}
             strokeDasharray={circumference}
             strokeDashoffset={strokeDashoffset}
@@ -108,9 +111,9 @@ const CircularLoader: React.FC<CircularLoaderProps> = ({
 
         {/* center icon */}
         <MaterialCommunityIcons
-          name={completed ? "check" : "bee"}
+          name={error ? "alert-circle-outline" : completed ? "check" : "bee"}
           size={48}
-          color={completed ? COLOURS.colour3 : "#000"}
+          color={error ? "#FF0014" : completed ? COLOURS.colour3 : "#000"}
           style={{
             position: "absolute",
             top: "50%",
@@ -122,8 +125,12 @@ const CircularLoader: React.FC<CircularLoaderProps> = ({
       </View>
 
       {/* loading text */}
-      <Text style={styles.text}>
-        {completed ? "Sticky board analysis complete." : texts[textIndex]}
+      <Text style={[styles.text, error && { color: "#FF0014" }]}>
+        {error
+          ? "Something went wrong. Please try again."
+          : completed
+            ? "Sticky board analysis complete."
+            : texts[textIndex]}
       </Text>
     </View>
   );

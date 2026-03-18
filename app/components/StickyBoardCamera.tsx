@@ -1,8 +1,8 @@
+import { CameraRoll } from "@react-native-camera-roll/camera-roll";
 import * as ImageManipulator from "expo-image-manipulator";
 import React, { useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Dimensions,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -10,7 +10,6 @@ import {
 } from "react-native";
 import RNFS from "react-native-fs";
 import { Camera, useCameraDevice } from "react-native-vision-camera";
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 const FRAME_W = 300;
 const FRAME_H = 300 * (11 / 8.5);
 
@@ -92,6 +91,16 @@ export default function StickyBoardCamera({
           base64: true,
         },
       );
+
+      // Save to camera roll
+      try {
+        await CameraRoll.saveAsset(cropped.uri, {
+          type: "photo",
+          album: "beeWare",
+        });
+      } catch (e) {
+        console.error("Failed to save to camera roll:", e);
+      }
 
       onPhoto(cropped.uri, cropped.base64 ?? "");
     } catch (e) {

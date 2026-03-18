@@ -1,0 +1,55 @@
+# Python backend (not needed for mobile build)
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Node
+node_modules/
+
+# Android/iOS build artifacts
+android/build/
+android/app/build/
+android/.gradle/
+ios/build/
+ios/Pods/
+ios/DerivedData/
+
+# Expo
+.expo/
+dist/
+
+# Docs / assets you don't ship
+docs/
+*.md
+*.txt
+
+# Git
+.git/
+.github/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test files
+__tests__/
+*.test.js
+*.spec.js
+coverage/
+
+# IDEs
+.vscode/
+.idea/
+
+# Secrets (handled via EAS env vars)
+.env
+.env.local

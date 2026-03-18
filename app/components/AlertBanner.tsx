@@ -20,9 +20,11 @@ type AlertType =
 const AlertBanner = ({
   alertType,
   closeAlert,
+  prompt,
 }: {
   alertType: AlertType;
   closeAlert?: () => void;
+  prompt?: string;
 }) => {
   let level = "";
   let title = "";
@@ -101,8 +103,7 @@ const AlertBanner = ({
     case "imageNotClear":
       level = "error";
       title = "Image is Not Clear";
-      text =
-        "We couldn’t analyze your image. Please retry with better lighting.";
+      text = `We couldn’t analyze your image. ${prompt}`;
       break;
 
     case "recommendationAvailable":
