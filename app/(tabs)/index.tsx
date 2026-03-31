@@ -66,7 +66,6 @@ Notifications.setNotificationHandler({
 });
 
 // TYPES
-type ApprovalType = "pending" | "approved" | "declined";
 type ApplicationType = "pending" | "success" | "error";
 type AlertType =
   | "treatmentComplete"
@@ -107,9 +106,9 @@ const STATUS_UUID = "d94602a9-e36e-4296-9514-fa2c3b9878c7";
 const ONE_MONTH = 30 * 24 * 60 * 60; // in seconds
 const ONE_DAY = 24 * 60 * 60; // in seconds
 const APPLICATION_QUANTITIES: Record<TreatmentType, number> = {
-  Thymol: 100,
+  Thymol: 50,
   "Oxalic Acid": 50,
-  "Formic Acid": 80,
+  "Formic Acid": 20,
 };
 const RESERVOIR_CAPACITY = 500;
 const EDUCATION = [
@@ -257,13 +256,14 @@ export default function Index() {
   {
     /****/
   }
-  const [treatment, setTreatment] = useState<string>(""); //Treatment value returned
+  const [treatment, setTreatment] = useState<string>("formic acid"); //Treatment value returned
   const [treatmentApplied, setTreatmentApplied] =
     useState<string>("Formic Acid");
   const [foamPadRemovalDate, setFoamPadRemovalDate] = useState<string>("");
-  const [treatmentStatus, setTreatmentStatus] = useState<TreatmentStatusType>(
-    "All pumps off, ready",
-  ); //Treatment status value returned
+  const [treatmentStatus, setTreatmentStatus] = useState<
+    TreatmentStatusType | string
+  >("All pumps off, ready"); //Treatment status value returned
+  const [treatmentStatusTick, setTreatmentStatusTick] = useState(0);
   const [treatmentUnread, setTreatmentUnread] = useState<boolean>(false);
   const [infestation, setInfestation] = useState<boolean | undefined>(
     undefined,
@@ -281,12 +281,18 @@ export default function Index() {
 
   const BLTManager = useRef(new BleManager()).current;
   const shouldScan = useRef(true);
+  const isScanning = useRef(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   const tempRangeRef = useRef<{ min: number; max: number } | null>(null);
+
+  const updateTreatmentStatus = (status: string) => {
+    setTreatmentStatus(status);
+    setTreatmentStatusTick((t) => t + 1);
+  };
 
   async function registerForPushNotificationsAsync() {
     let token;
@@ -349,6 +355,15 @@ export default function Index() {
     setImageError(undefined);
     setEncodedImage("");
     setImageURI(undefined);
+    setTreatment("formic acid");
+
+    if (!connectedDevice || !isConnected) {
+      setAlerts((prevAlerts) => {
+        const newAlerts = new Set(prevAlerts);
+        newAlerts.add("connectionError");
+        return newAlerts;
+      });
+    }
 
     // wipe entries from this month
     const now = new Date();
@@ -366,13 +381,22 @@ export default function Index() {
     if (!connectedDevice || !isConnected) {
       setAlerts((prevAlerts) => {
         const newAlerts = new Set(prevAlerts);
-        // newAlerts.add("connectionError");
+        newAlerts.add("connectionError");
         return newAlerts;
       });
+      scanDevices();
     }
-    checkScheduledTreatment();
+    if (connectedDevice && isConnected) {
+      setAlerts((prevAlerts) => {
+        const newAlerts = new Set(prevAlerts);
+        newAlerts.delete("connectionError");
+        return newAlerts;
+      });
+      // checkScheduledTreatment();
+    }
   }, [connectedDevice, isConnected]);
   useEffect(() => {
+    console.log(treatmentStatus);
     const sendNotification = async (
       title: string,
       body: string,
@@ -454,7 +478,7 @@ export default function Index() {
     reservoirStorage.set(chemicalName, newCount);
 
     const updatedQuantity =
-      100 -
+      reservoirQuantity[chemicalName] -
       Math.round((newCount * applicationQuantity * 100) / RESERVOIR_CAPACITY);
 
     const threshold = (applicationQuantity * 100) / RESERVOIR_CAPACITY;
@@ -476,9 +500,7 @@ export default function Index() {
     const futureDates = getTreatmentDates(chemicalName);
     if (chemicalName == "Formic Acid") {
       d.setDate(today.getDate() + 24);
-      setFoamPadRemovalDate(
-        d.toLocaleString("en-US", { month: "short", day: "numeric" }),
-      );
+      setFoamPadRemovalDate(formatDates([d]));
 
       sendNotification(
         "It’s time to replace your foam pads",
@@ -487,36 +509,34 @@ export default function Index() {
       );
       // schedule data sent to microcontroller
       futureDates.slice(1, 4).forEach((date, i) => {
-        scheduledTreatmentStorage.set(
-          date.toISOString(),
-          JSON.stringify({ treatment: "formic acid" }),
-        );
-        sendNotification(
-          "Treatment Ready",
-          "Open the app to apply.",
-          (i + 1) * 6 * 24 * 60 * 60,
-        );
+        // scheduledTreatmentStorage.set(
+        //   date.toISOString(),
+        //   JSON.stringify({ treatment: "formic acid" }),
+        // );
+        // sendNotification(
+        //   "Treatment Ready",
+        //   "Open the app to apply.",
+        //   (i + 1) * 6 * 24 * 60 * 60,
+        // );
       });
     } else if (chemicalName == "Thymol") {
       d.setDate(today.getDate() + 28);
-      setFoamPadRemovalDate(
-        d.toLocaleString("en-US", { month: "short", day: "numeric" }),
-      );
+      setFoamPadRemovalDate(formatDates([d]));
       sendNotification(
         "It’s time to replace your foam pads",
         "The treatment application cycle has been completed. Please remove and discard the used foam pad and replace it with a new one.",
         28 * 24 * 60 * 60,
       );
       // schedule data sent to microcontroller
-      scheduledTreatmentStorage.set(
-        futureDates[1].toISOString(),
-        JSON.stringify({ treatment: "thymol" }),
-      );
-      sendNotification(
-        "Treatment Ready",
-        "Open the app to apply.",
-        13 * 24 * 60 * 60,
-      );
+      // scheduledTreatmentStorage.set(
+      //   futureDates[1].toISOString(),
+      //   JSON.stringify({ treatment: "thymol" }),
+      // );
+      // sendNotification(
+      //   "Treatment Ready",
+      //   "Open the app to apply.",
+      //   13 * 24 * 60 * 60,
+      // );
     }
 
     setAlerts((prev) => {
@@ -536,7 +556,7 @@ export default function Index() {
         ONE_DAY,
       );
     }
-  }, [treatmentStatus]);
+  }, [treatmentStatus, treatmentStatusTick]);
   useEffect(() => {
     alertStorage.set("alerts", JSON.stringify([...alerts]));
   }, [alerts]);
@@ -788,6 +808,8 @@ export default function Index() {
 
   // Scans availbale BLT Devices and then call connectDevice
   async function scanDevices() {
+    if (isScanning.current) return; // prevent duplicate scan loops
+    isScanning.current = true;
     let connected = false;
     let retryDelay = 5000;
 
@@ -818,7 +840,7 @@ export default function Index() {
             console.warn(error);
             setAlerts((prevAlerts) => {
               const newAlerts = new Set(prevAlerts);
-              // newAlerts.add("connectionError");
+              newAlerts.add("connectionError");
               return newAlerts;
             });
           }
@@ -835,8 +857,10 @@ export default function Index() {
         setTimeout(() => {
           BLTManager.stopDeviceScan();
           if (!connected && shouldScan.current) {
-            retryDelay = Math.min(retryDelay * 2, 60000 * 5); // exponential backoff, cap at 5 mins
+            retryDelay = Math.min(retryDelay * 2, 60000 * 5);
             attemptScan();
+          } else {
+            isScanning.current = false; // reset when done
           }
         }, retryDelay);
       });
@@ -876,6 +900,15 @@ export default function Index() {
         ...sessionDetails,
         applied: "error" as ApplicationType,
       }));
+      setTreatmentApplied(
+        sessionDetails.treatment
+          ? sessionDetails.treatment.replace(
+              /\w\S*/g,
+              (text) =>
+                text.charAt(0).toUpperCase() + text.substring(1).toLowerCase(),
+            )
+          : "",
+      );
       setTreatment("error");
 
       return;
@@ -915,6 +948,12 @@ export default function Index() {
         BLTManager.onDeviceDisconnected(device.id, (error, device) => {
           console.log("Device DC");
           setIsConnected(false);
+          setConnectedDevice(undefined);
+
+          if (shouldScan.current) {
+            console.log("Restarting scan after disconnect...");
+            scanDevices();
+          }
         });
 
         //Read inital values
@@ -932,7 +971,7 @@ export default function Index() {
           .readCharacteristicForService(SERVICE_UUID, STATUS_UUID)
           .then((valenc) => {
             if (valenc?.value) {
-              setTreatmentStatus(
+              updateTreatmentStatus(
                 base64.decode(valenc?.value) as TreatmentStatusType,
               );
               console.log(
@@ -994,9 +1033,7 @@ export default function Index() {
           STATUS_UUID,
           (error, characteristic) => {
             if (characteristic?.value != null) {
-              setTreatmentStatus(
-                base64.decode(characteristic?.value) as TreatmentStatusType,
-              );
+              updateTreatmentStatus(base64.decode(characteristic?.value));
               console.log(
                 "Treatment status update received: ",
                 base64.decode(characteristic?.value),
@@ -1014,6 +1051,10 @@ export default function Index() {
     if (verifyingImage) return;
     setVerifyingImage(true);
     try {
+      // HOTFIX
+      // setImageError(undefined);
+      // showSuccessOverlay();
+      // END HOTFIX
       const verificationResponse = await fetch(`${BACKEND_URL}/verifyImage`, {
         method: "POST",
         headers: {
@@ -1327,10 +1368,7 @@ export default function Index() {
                 When you’re ready, go to your hive to start the mite check.
               </Text>
               <ScanInfoOne style={{ alignSelf: "center" }} />
-              {/* <Image
-                source={require("../../assets/scanInfo1.png")}
-                style={{ alignSelf: "center" }}
-              /> */}
+
               <Text style={{ color: COLOURS.darkGrey }}>
                 For best results, complete this check during daylight.
               </Text>
@@ -1488,10 +1526,6 @@ export default function Index() {
               <Text style={{ color: COLOURS.darkGrey }}>
                 Take a photo of your hive’s sticky board.
               </Text>
-              {/* <Image
-                source={require("../../assets/scanInfo3.png")}
-                style={{ alignSelf: "center" }}
-              /> */}
               <ScanInfoThree style={{ alignSelf: "center" }} />
               <Text style={{ color: COLOURS.darkGrey }}>
                 Ensure the board is fully visible, well lit, and free of glare
@@ -2080,10 +2114,7 @@ export default function Index() {
                 })}
                 , no infestation is detected and treatment is not necessary.
               </Text>
-              {/* <Image
-                source={require("../../assets/treatInfo.png")}
-                style={{ alignSelf: "center" }}
-              /> */}
+
               <TreatInfo style={{ alignSelf: "center" }} />
               <View
                 style={{
@@ -2138,10 +2169,7 @@ export default function Index() {
             </Text>
             <View style={{ justifyContent: "space-between", height: "80%" }}>
               <AlertBanner alertType="treatmentTemporarilyUnavailable" />
-              {/* <Image
-                source={require("../../assets/treatInfo.png")}
-                style={{ alignSelf: "center" }}
-              /> */}
+
               <TreatInfo style={{ alignSelf: "center" }} />
               <View
                 style={{
@@ -2213,13 +2241,7 @@ export default function Index() {
                     (text) =>
                       text.charAt(0).toUpperCase() +
                       text.substring(1).toLowerCase(),
-                  )} has been applied on ${lastCheckDate.toLocaleDateString(
-                    "en-US",
-                    {
-                      month: "long",
-                      day: "numeric",
-                    },
-                  )} at ${new Date().toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}. ${treatmentApplied.toLocaleLowerCase() !== "oxalic acid" ? `The subsequent applications will dispense on ${formatDates(getTreatmentDates(treatmentApplied).slice(1))}.` : ""}`}
+                  )} has been applied on ${formatDates([lastCheckDate])} at ${new Date().toLocaleString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}. ${treatmentApplied.toLocaleLowerCase() !== "oxalic acid" ? `The subsequent applications will dispense on ${formatDates(getTreatmentDates(treatmentApplied).slice(1, -1))}.` : ""}`}
                 </Text>
                 <Text>
                   {treatmentApplied.toLocaleLowerCase() == "oxalic acid"
@@ -2474,14 +2496,18 @@ export default function Index() {
     const result = await launchImageLibrary({
       mediaType: "photo",
       includeBase64: true,
+      maxWidth: 2650,
+      maxHeight: 2650,
+      quality: 0.9,
     });
+
     if (result.didCancel) {
       console.log("User cancelled image picker");
     } else if (result.errorCode) {
       console.log(result.errorMessage);
     } else if (result.assets && result.assets.length > 0) {
-      const source = result.assets![0]; //Unwrap the result assets and grab the first item (the captured image)
-      setEncodedImage(source.base64!); // raw base64 only
+      const source = result.assets![0];
+      setEncodedImage(source.base64!);
       setImageURI(source.uri);
       getNextStep(5);
     }
@@ -2516,6 +2542,18 @@ export default function Index() {
         ...sessionDetails,
         miteCheckStatus: "pending" as MiteCheckStatusType,
       }));
+      // HOTFIX - comment out lines until the next setSessionDetails and add the following
+      // also default it to go to the response.ok conditional block
+      // setTimeout(async function () {
+
+      //   const mite_count = 120;
+      //   const infestation = true;
+      //   const treatment_recommendation = "thymol";
+      //   const delay = false;
+      //   const temp_range: number[] = [];
+      //   const annotated_image = null;
+      //   console.log(mite_count)}, 5000);
+      // END HOTFIX
       const response = await fetch(`${BACKEND_URL}/detectAndTreat`, {
         method: "POST",
         headers: {
@@ -2591,7 +2629,7 @@ export default function Index() {
             "It’s time for your monthly sticky board check to monitor hive health.",
             ONE_MONTH,
           );
-        } else if (delay) {
+        } else if (delay && temp_range.length > 0) {
           // set a temperature tracker that expires in 30 days
           const expiryDate = new Date();
           expiryDate.setSeconds(expiryDate.getSeconds() + ONE_MONTH);
@@ -2615,10 +2653,15 @@ export default function Index() {
         }));
       }
     } catch (error) {
-      console.error(
-        "handleStartAnalysis failed:",
-        JSON.stringify(error, Object.getOwnPropertyNames(error)),
-      );
+      if (error instanceof Error) {
+        console.error(
+          "handleStartAnalysis failed:",
+          error.message,
+          error.stack,
+        );
+      } else {
+        console.error("handleStartAnalysis failed:", error);
+      }
       setIsAnalyzing("Analysis Failed");
       closeUploadModal();
     }
@@ -3123,11 +3166,8 @@ export default function Index() {
           <View style={styles.sheet}>
             {/* drag handle */}
             <View style={styles.handle} />
-            <ScrollView
-              style={styles.page}
-              contentContainerStyle={{ paddingBottom: 50 }}
-            >
-              <Text style={styles.pageTitle}>Resources</Text>
+            <ScrollView>
+              <Text style={styles.title}>Resources</Text>
               <Text style={styles.subtitle}>
                 View your hives detection and treatment history.
               </Text>

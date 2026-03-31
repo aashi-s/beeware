@@ -37,7 +37,7 @@ export default function OnboardingFinal() {
             },
           ]}
         >
-          • Remove after 24 hours
+          • Place a sticky board today and wait 24 hours
         </Text>
         <Text
           style={[
@@ -49,7 +49,7 @@ export default function OnboardingFinal() {
             },
           ]}
         >
-          • Place a sticky board tonight
+          • Scan sticky board to check infestation status
         </Text>
         <Text
           style={[
@@ -61,17 +61,7 @@ export default function OnboardingFinal() {
             },
           ]}
         >
-          • Photograph and upload in the app
-        </Text>
-        <Text
-          style={[
-            styles.body,
-            {
-              paddingBottom: 13,
-            },
-          ]}
-        >
-          • Review results and approve treatment if needed
+          • Review results, place foam pads (if required) and approve treatment
         </Text>
       </View>
       <View style={styles.helpPrompt}>

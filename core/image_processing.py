@@ -310,88 +310,98 @@ class VarroaDetector:
     def verify_image(self, encodedImage=None):
         try:
             image = decode_image(encodedImage)
-            if image is None:
-                return {"verified": False, "reason": "Please resubmit your image."}
+            # if image is None:
+            #     print("error: no image")
+            #     return {"verified": False, "reason": "Please resubmit your image."}
 
             h, w = image.shape[:2]
 
-            if h < 100 or w < 100:
-                return {
-                    "verified": False,
-                    "reason": "Please try again with a bigger image.",
-                }
+            # if h < 100 or w < 100:
+            #     print("error: too small")
+            #     return {
+            #         "verified": False,
+            #         "reason": "Please try again with a bigger image.",
+            #     }
 
-            aspect_ratio = w / h
-            if aspect_ratio < 0.3 or aspect_ratio > 5.0:
-                return {
-                    "verified": False,
-                    "reason": "Please try again with an appropriate aspect ratio.",
-                }
+            # aspect_ratio = w / h
+            # if aspect_ratio < 0.3 or aspect_ratio > 5.0:
+            #     print("error: incorrect aspect ratio")
+            #     return {
+            #         "verified": False,
+            #         "reason": "Please try again with an appropriate aspect ratio.",
+            #     }
 
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            brightness = np.mean(gray)
-            contrast = gray.std()
+            # gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            # brightness = np.mean(gray)
+            # contrast = gray.std()
 
-            if brightness < 40 or brightness > 220:
-                return {
-                    "verified": False,
-                    "reason": "Please improve the exposure and try again.",
-                }
+            # if brightness < 40 or brightness > 220:
+            #     print("error: low exposure")
+            #     return {
+            #         "verified": False,
+            #         "reason": "Please improve the exposure and try again.",
+            #     }
 
-            if contrast < 20:
-                return {
-                    "verified": False,
-                    "reason": "Please increase contrast and try again.",
-                }
+            # if contrast < 20:
+            #     print("error: low contrast")
+            #     return {
+            #         "verified": False,
+            #         "reason": "Please increase contrast and try again.",
+            #     }
 
-            # Enhancement loop (on a copy)
+            # # Enhancement loop (on a copy)
             enhanced = image.copy()
-            trials = 0
-            while (
-                np.mean(cv2.cvtColor(enhanced, cv2.COLOR_BGR2GRAY)) < 100 and trials < 2
-            ):
-                trials += 1
-                lab = cv2.cvtColor(enhanced, cv2.COLOR_BGR2LAB)
-                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-                lab[:, :, 0] = clahe.apply(lab[:, :, 0])
-                enhanced = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-                gamma = 0.7
-                enhanced = np.clip((enhanced / 255.0) ** gamma * 255, 0, 255).astype(
-                    np.uint8
-                )
+            # trials = 0
+            # while (
+            #     np.mean(cv2.cvtColor(enhanced, cv2.COLOR_BGR2GRAY)) < 100 and trials < 2
+            # ):
+            #     trials += 1
+            #     lab = cv2.cvtColor(enhanced, cv2.COLOR_BGR2LAB)
+            #     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            #     lab[:, :, 0] = clahe.apply(lab[:, :, 0])
+            #     enhanced = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+            #     gamma = 0.7
+            #     enhanced = np.clip((enhanced / 255.0) ** gamma * 255, 0, 255).astype(
+            #         np.uint8
+            #     )
 
             gray = cv2.cvtColor(enhanced, cv2.COLOR_BGR2GRAY)
 
             fm = cv2.Laplacian(gray, cv2.CV_64F).var()
+            print("blur level", fm)
             if fm < 80:
+                print("error: blurry")
                 return {
                     "verified": False,
                     "reason": "Please retry with a less blurry image.",
                 }
 
-            noise = cv2.meanStdDev(gray)[1][0][0]
-            if noise > 80:
-                return {
-                    "verified": False,
-                    "reason": "Please retry with brighter lighting.",
-                }
+            # noise = cv2.meanStdDev(gray)[1][0][0]
+            # if noise > 80:
+            #     print("error: grainy")
+            #     return {
+            #         "verified": False,
+            #         "reason": "Please retry with brighter lighting.",
+            #     }
 
-            edges = cv2.Canny(gray, 50, 150)
-            if np.sum(edges > 0) / (h * w) < 0.01:
-                return {
-                    "verified": False,
-                    "reason": "Please retry with a different image.",
-                }
+            # edges = cv2.Canny(gray, 50, 150)
+            # if np.sum(edges > 0) / (h * w) < 0.01:
+            #     print("error: greyscale")
+            #     return {
+            #         "verified": False,
+            #         "reason": "Please retry with a different image.",
+            #     }
 
             # Glare check with connected components
-            _, binary_image = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY)
-            num_labels, _, stats, _ = cv2.connectedComponentsWithStats(binary_image)
-            for i in range(1, num_labels):
-                if stats[i, cv2.CC_STAT_AREA] > (h * w * 0.05):
-                    return {
-                        "verified": False,
-                        "reason": "Please retry with less glare.",
-                    }
+            # _, binary_image = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY)
+            # num_labels, _, stats, _ = cv2.connectedComponentsWithStats(binary_image)
+            # for i in range(1, num_labels):
+            #     if stats[i, cv2.CC_STAT_AREA] > (h * w * 0.05):
+            #         print("error: glare")
+            #         return {
+            #             "verified": False,
+            #             "reason": "Please retry with less glare.",
+            #         }
 
             return {"verified": True}
 
