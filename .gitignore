@@ -104,3 +104,5 @@ core/__pycache__/
 *.pkl
 *.db
 *.sqlite3
+
+google-services.json
