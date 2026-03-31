@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "9477862666",
+    "project_id": "beeware-abfe2",
+    "storage_bucket": "beeware-abfe2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:9477862666:android:b89160d92c34788fcbf6f3",
+        "android_client_info": {
+          "package_name": "com.anonymous.beeware"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCAJI0e2AKVGhFU3-Kbiys57Yhg-XVpamw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

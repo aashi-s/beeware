@@ -6,10 +6,12 @@ export default function ConfirmCheckbox({
   approvedTreatment,
   setApprovedTreatment,
   disabled,
+  foamPads,
 }: {
   approvedTreatment: boolean;
   setApprovedTreatment: (newVal: boolean) => void;
   disabled?: boolean;
+  foamPads: boolean;
 }) {
   return (
     <Pressable
@@ -25,8 +27,11 @@ export default function ConfirmCheckbox({
         disabled={disabled}
       />
       <Text style={styles.text}>
-        I understand that this action will apply the recommended treatment
-        inside my beehive
+        I confirm that I have{" "}
+        <Text style={{ fontWeight: 700 }}>
+          {foamPads ? "placed" : "removed"} foam pads
+        </Text>{" "}
+        in my hive. This action will apply treatment cycle automatically.
       </Text>
     </Pressable>
   );

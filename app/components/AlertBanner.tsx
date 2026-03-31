@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Platform, Text, View } from "react-native";
+import { Platform, Text, TouchableOpacity, View } from "react-native";
 import { COLOURS, styles } from "../styles/styles";
 type AlertType =
   | "treatmentComplete"
@@ -14,13 +14,17 @@ type AlertType =
   | "recommendationAvailable"
   | "treatmentTemporarilyUnavailable"
   | "recommendationExpired"
-  | "treatmentNotApplied";
+  | "treatmentNotApplied"
+  | "imageNotClear"
+  | "nextRoundReady";
 const AlertBanner = ({
   alertType,
   closeAlert,
+  prompt,
 }: {
   alertType: AlertType;
   closeAlert?: () => void;
+  prompt?: string;
 }) => {
   let level = "";
   let title = "";
@@ -96,6 +100,12 @@ const AlertBanner = ({
       text =
         "We couldn’t analyze your sticky board. Please take another image and try again.";
       break;
+    case "imageNotClear":
+      level = "error";
+      title = "Image is Not Clear";
+      text = `We couldn’t analyze your image. ${prompt}`;
+      break;
+
     case "recommendationAvailable":
       level = "general";
       title = "Treatment Recommendation Available";
@@ -106,7 +116,11 @@ const AlertBanner = ({
       title = "No Treatment Applied";
       text = "You've opted out of applying treatment.";
       break;
-
+    case "nextRoundReady":
+      level = "general";
+      title = "It's time to apply treatment";
+      text = "The next dose of treatment is being applied.";
+      break;
     default:
       level = "general";
       title = "No Treatment Applied";
@@ -160,7 +174,6 @@ const AlertBanner = ({
               ? styles.error
               : styles.generalAlert,
         styles.alert,
-        !closeAlert && { marginTop: 0 },
       ]}
     >
       {getIcon(level)}
@@ -186,12 +199,19 @@ const AlertBanner = ({
         </Text>
       </View>
       {closeAlert && (
-        <MaterialCommunityIcons
-          name="close"
-          color={COLOURS.darkGrey}
-          size={12}
+        <TouchableOpacity
+          style={{
+            padding: 10,
+            justifyContent: "center",
+          }}
           onPress={closeAlert}
-        />
+        >
+          <MaterialCommunityIcons
+            name="close"
+            color={COLOURS.darkGrey}
+            size={12}
+          />
+        </TouchableOpacity>
       )}
     </View>
   );

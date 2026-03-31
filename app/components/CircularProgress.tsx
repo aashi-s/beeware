@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { Animated, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
+import { COLOURS } from "../styles/styles";
 
 type CircularProgressProps = {
   size: number; // diameter of the circle
@@ -80,7 +81,16 @@ const CircularProgress: React.FC<CircularProgressProps> = ({
           { justifyContent: "center", alignItems: "center" },
         ]}
       >
-        <Text style={{ fontSize: 18, textAlign: "center" }}>{text}</Text>
+        <Text
+          style={{
+            fontSize: text == "Update" || text.includes("Full") ? 14 : 18,
+            textAlign: "center",
+            width: text.includes("Full") ? "60%" : "100%",
+            color: COLOURS.darkGrey,
+          }}
+        >
+          {text}
+        </Text>
       </View>
     </View>
   );

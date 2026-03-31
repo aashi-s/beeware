@@ -4,7 +4,8 @@
     "slug": "beeware",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/icon.png",
+
     "scheme": "beeware",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -17,6 +18,10 @@
       }
     },
     "android": {
+      "notification": {
+        "icon": "./assets/notification-icon.png",
+        "color": "#ffffff"
+      },
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -68,7 +73,8 @@
             "node_modules/@expo-google-fonts/roboto/600SemiBold/Roboto_600SemiBold.ttf"
           ]
         }
-      ]
+      ],
+      "react-native-vision-camera"
     ],
     "experiments": {
       "typedRoutes": true,
