@@ -870,7 +870,7 @@ export default function Index() {
           if (scannedDevice && scannedDevice.name == "BLETest") {
             connected = true;
             BLTManager.stopDeviceScan();
-            console.log("RSSI at scan time:", scannedDevice.rssi);
+            // console.log("RSSI at scan time:", scannedDevice.rssi);
             connectDevice(scannedDevice);
           }
         });
@@ -916,28 +916,28 @@ export default function Index() {
     }
   }
 
-  const [rssi, setRssi] = useState<number | null>(null);
-  const rssiInterval = useRef<NodeJS.Timeout | null>(null);
+  // const [rssi, setRssi] = useState<number | null>(null);
+  // const rssiInterval = useRef<NodeJS.Timeout | null>(null);
 
   // Call this after connectDevice succeeds
-  const startRSSIPolling = (deviceId: string) => {
-    rssiInterval.current = setInterval(async () => {
-      try {
-        const device = await BLTManager.readRSSIForDevice(deviceId);
-        setRssi(device.rssi);
-        console.log("RSSI:", device.rssi);
-      } catch (e) {
-        console.warn("RSSI read failed:", e);
-      }
-    }, 1000); // every second
-  };
+  // const startRSSIPolling = (deviceId: string) => {
+  //   rssiInterval.current = setInterval(async () => {
+  //     try {
+  //       const device = await BLTManager.readRSSIForDevice(deviceId);
+  //       setRssi(device.rssi);
+  //       console.log("RSSI:", device.rssi);
+  //     } catch (e) {
+  //       console.warn("RSSI read failed:", e);
+  //     }
+  //   }, 1000); // every second
+  // };
 
-  const stopRSSIPolling = () => {
-    if (rssiInterval.current) {
-      clearInterval(rssiInterval.current);
-      rssiInterval.current = null;
-    }
-  };
+  // const stopRSSIPolling = () => {
+  //   if (rssiInterval.current) {
+  //     clearInterval(rssiInterval.current);
+  //     rssiInterval.current = null;
+  //   }
+  // };
 
   //Function to send data to ESP32
   async function sendTreatment(value: string) {
@@ -996,8 +996,8 @@ export default function Index() {
           console.log("Device DC");
           updateIsConnected(false);
           updateConnectedDevice(undefined);
-          stopRSSIPolling();
-          if (device?.id) startRSSIPolling(device.id);
+          // stopRSSIPolling();
+          // if (device?.id) startRSSIPolling(device.id);
 
           if (shouldScan.current) {
             console.log("Restarting scan after disconnect...");
