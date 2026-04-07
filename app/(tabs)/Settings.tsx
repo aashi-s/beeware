@@ -16,7 +16,7 @@ import Modal from "react-native-modal";
 // Placeholder SVG components
 import { userStorage } from "@/index";
 import { COLOURS } from "../styles/styles";
-
+const TREATMENTS = ["formic acid", "oxalic acid", "thymol"];
 const Settings = () => {
   const [pushEnabled, setPushEnabled] = useState(true);
   const [termsModalVisible, setTermsModalVisible] = useState(false);
@@ -24,6 +24,7 @@ const Settings = () => {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [selectedTreatment, setSelectedTreatment] = useState("formic acid");
   const handleLogout = () => {
     userStorage.set("reset", JSON.stringify({ value: true }));
     router.replace("/(onboarding)");
@@ -156,10 +157,39 @@ const Settings = () => {
 
       {/* Developer */}
       <Text style={styles.sectionTitle}>DEVELOPER</Text>
+      <View style={{ marginVertical: 10 }}>
+        {TREATMENTS.map((treatment) => (
+          <TouchableOpacity
+            key={treatment}
+            onPress={() => setSelectedTreatment(treatment)}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginBottom: 8,
+            }}
+          >
+            <MaterialCommunityIcons
+              name={
+                selectedTreatment === treatment
+                  ? "checkbox-marked-circle"
+                  : "checkbox-blank-circle-outline"
+              }
+              size={22}
+              color={COLOURS.colour3}
+            />
+            <Text style={{ marginLeft: 8, textTransform: "capitalize" }}>
+              {treatment}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
       <TouchableOpacity
         style={styles.card}
         onPress={() =>
-          userStorage.set("reset", JSON.stringify({ value: true }))
+          userStorage.set(
+            "reset",
+            JSON.stringify({ value: true, treatment: selectedTreatment }),
+          )
         }
       >
         <View style={{ flexDirection: "row", alignItems: "center" }}>

@@ -2,7 +2,6 @@ import base64
 import datetime
 import math
 import os
-import shutil
 import sys
 import threading
 
@@ -579,7 +578,7 @@ class VarroaDetector:
             # # Run detection
             self.run_detection()
 
-            self.mite_count = max(self.mite_count // numDays, 12)
+            self.mite_count = max(self.mite_count,12) // numDays
             if overrideTreatment and self.mite_count > 9:
                 return {
                     "infestation": True,
@@ -677,7 +676,7 @@ class VarroaDetector:
                 x1, y1, x2, y2 = map(int, box[:4])
                 cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 0, 255), 6)
 
-            _, buffer = cv2.imencode(".jpg", annotated)
+            _, buffer = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 60])
             self.annotated_image = base64.b64encode(buffer).decode("utf-8")
 
         print(f"\nTotal varroa detected: {self.mite_count}")
@@ -697,41 +696,41 @@ class VarroaDetector:
 
         output_dir = os.path.join(self.output_path, os.path.dirname(rel_path))
         os.makedirs(output_dir, exist_ok=True)
-        base_output_path = os.path.join(
-            self.output_path, os.path.splitext(rel_path)[0] + ".jpg"
-        )
-        mask_output_path = os.path.join(
-            self.output_path, os.path.splitext(rel_path)[0] + ".mask.png"
-        )
+        # base_output_path = os.path.join(
+        #     self.output_path, os.path.splitext(rel_path)[0] + ".jpg"
+        # )
+        # mask_output_path = os.path.join(
+        #     self.output_path, os.path.splitext(rel_path)[0] + ".mask.png"
+        # )
 
-        glined_output_path = os.path.join(
-            self.output_path, os.path.splitext(rel_path)[0] + ".g-lined.jpg"
-        )
+        # glined_output_path = os.path.join(
+        #     self.output_path, os.path.splitext(rel_path)[0] + ".g-lined.jpg"
+        # )
 
         try:
             print("Processing image")
-            binary_mask = None
+            # binary_mask = None
 
             # For JPGs, copy the original to be the base image
-            shutil.copyfile(input_path, base_output_path)
+            # shutil.copyfile(input_path, base_output_path)
             # Now, try to crop it from the original path
-            crop_img, binary_mask = crop_green_lines(self.uploadedImage)
-            if crop_img is not None:
-                cv2.imwrite(glined_output_path, crop_img)
+            # crop_img, binary_mask = crop_green_lines(self.uploadedImage)
+            # if crop_img is not None:
+            #     cv2.imwrite(glined_output_path, crop_img)
             # Save the binary mask if it was successfully generated
-            if binary_mask is not None:
-                cv2.imwrite(mask_output_path, binary_mask)
+            # if binary_mask is not None:
+            #     cv2.imwrite(mask_output_path, binary_mask)
 
         except Exception as e:
-            print(f"Error processing image {rel_path}: {str(e)}")
+            print(f"Error processing image: {str(e)}")
             # Ensure the base image exists even if cropping fails
-            if not os.path.exists(base_output_path) and not input_path.lower().endswith(
-                ".dng"
-            ):
-                shutil.copyfile(input_path, base_output_path)
-                shutil.copyfile(input_path, base_output_path)
-                shutil.copyfile(input_path, base_output_path)
-                shutil.copyfile(input_path, base_output_path)
+            # if not os.path.exists(base_output_path) and not input_path.lower().endswith(
+            #     ".dng"
+            # ):
+            #     shutil.copyfile(input_path, base_output_path)
+            #     shutil.copyfile(input_path, base_output_path)
+            #     shutil.copyfile(input_path, base_output_path)
+            #     shutil.copyfile(input_path, base_output_path)
 
     def run_detection(self):
         # self.image_listbox.configure(state="disabled")
@@ -760,6 +759,7 @@ class VarroaDetector:
                 verbose=False,
                 batch=1,
                 exist_ok=True,
+                rect=True,
             )
             annotated_base64 = None
             for result in results:
@@ -781,9 +781,7 @@ class VarroaDetector:
                 self.annotated_image = annotated_base64
 
                 # save annotated image locally with datetime filename
-                script_dir = os.path.dirname(os.path.abspath(__file__))
                 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                cv2.imwrite(os.path.join(script_dir, f"{timestamp}.jpg"), annotated)
                 os.makedirs("snapshots", exist_ok=True)
                 cv2.imwrite(f"snapshots/{timestamp}.jpg", annotated)
 

@@ -10,6 +10,7 @@ type Props = {
 
 export default function TreatmentTimeline({ treatment, dates }: Props) {
   const steps = treatment == "Formic Acid" ? 5 : treatment == "Thymol" ? 3 : 1;
+  const quantity = treatment == "Formic Acid" ? 20 : 50;
   const timeline =
     treatment == "Formic Acid" ? 24 : treatment == "Thymol" ? 28 : 1;
 
@@ -42,8 +43,8 @@ export default function TreatmentTimeline({ treatment, dates }: Props) {
         </Text>
         <Text style={{ color: COLOURS.darkGrey, lineHeight: 20 }}>
           {treatment == "Oxalic Acid"
-            ? "Treatment automatically applied one time. No foam pad required."
-            : `Treatment automatically applied on to a foam pad ${steps - 1} times over ${timeline} days`}
+            ? "50 mL of treatment automatically applied one time. No foam pad required."
+            : `${quantity} mL of treatment automatically applied on to a foam pad ${steps - 1} times over ${timeline} days`}
         </Text>
         {treatment == "Oxalic Acid" ? (
           <View style={styles.step}>

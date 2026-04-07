@@ -18,7 +18,6 @@ import {
   Linking,
   LogBox,
   PermissionsAndroid,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -98,7 +97,7 @@ type TreatmentStatusType =
 type MiteCheckStatusType = "not started" | "pending" | "success" | "error";
 type TreatmentType = "Oxalic Acid" | "Thymol" | "Formic Acid";
 // CONSTANTS
-const BACKEND_URL = "https://loriann-imbricative-transfixedly.ngrok-free.dev";
+const BACKEND_URL = "https://careers-mega-lucky-karma.trycloudflare.com";
 const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const TEMPERATURE_UUID = "6d68efe5-04b6-4a85-abc4-c2670b7bf7fd";
 const TREATMENT_UUID = "f27b53ad-c63d-49a0-8c0f-9f297e6cc520";
@@ -257,6 +256,8 @@ export default function Index() {
     /****/
   }
   const [treatment, setTreatment] = useState<string>("formic acid"); //Treatment value returned
+  const [treatmentToRecommend, setTreatmentToRecommend] =
+    useState<string>("formic acid"); //Treatment value returned
   const [treatmentApplied, setTreatmentApplied] =
     useState<string>("Formic Acid");
   const [foamPadRemovalDate, setFoamPadRemovalDate] = useState<string>("");
@@ -288,6 +289,19 @@ export default function Index() {
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   const tempRangeRef = useRef<{ min: number; max: number } | null>(null);
+
+  const connectedDeviceRef = useRef<BLEDevice | undefined>(undefined);
+  const isConnectedRef = useRef(false);
+
+  const updateConnectedDevice = (device: BLEDevice | undefined) => {
+    connectedDeviceRef.current = device;
+    setConnectedDevice(device);
+  };
+
+  const updateIsConnected = (val: boolean) => {
+    isConnectedRef.current = val;
+    setIsConnected(val);
+  };
 
   const updateTreatmentStatus = (status: string) => {
     setTreatmentStatus(status);
@@ -338,7 +352,9 @@ export default function Index() {
     return token;
   }
 
-  const reset = () => {
+  const reset = (
+    treatmentToRecommend: "formic acid" | "oxalic acid" | "thymol",
+  ) => {
     setlastNotInfested(32);
     setNextCheck(-1);
     setLastCheckDate(() => {
@@ -356,8 +372,10 @@ export default function Index() {
     setEncodedImage("");
     setImageURI(undefined);
     setTreatment("formic acid");
+    setTreatmentToRecommend(treatmentToRecommend);
+    console.log(connectedDevice);
 
-    if (!connectedDevice || !isConnected) {
+    if (!connectedDeviceRef.current && !isConnectedRef.current) {
       setAlerts((prevAlerts) => {
         const newAlerts = new Set(prevAlerts);
         newAlerts.add("connectionError");
@@ -378,7 +396,8 @@ export default function Index() {
     });
   };
   useEffect(() => {
-    if (!connectedDevice || !isConnected) {
+    console.log("connected device", connectedDevice);
+    if (!connectedDevice && !isConnected) {
       setAlerts((prevAlerts) => {
         const newAlerts = new Set(prevAlerts);
         newAlerts.add("connectionError");
@@ -679,7 +698,7 @@ export default function Index() {
     scanDevices();
 
     // reset state for testing
-    reset();
+    reset("formic acid");
 
     // notifs
     registerForPushNotificationsAsync().then(
@@ -751,8 +770,11 @@ export default function Index() {
         const parsed = JSON.parse(data);
         const resetVal = parsed.value;
         if (resetVal) {
-          reset();
-          userStorage.set("reset", JSON.stringify({ value: false }));
+          reset(parsed.treatment);
+          userStorage.set(
+            "reset",
+            JSON.stringify({ value: false, treatment: "" }),
+          );
         }
       }
     }, []),
@@ -848,6 +870,7 @@ export default function Index() {
           if (scannedDevice && scannedDevice.name == "BLETest") {
             connected = true;
             BLTManager.stopDeviceScan();
+            console.log("RSSI at scan time:", scannedDevice.rssi);
             connectDevice(scannedDevice);
           }
         });
@@ -887,15 +910,38 @@ export default function Index() {
       }
 
       const connectionStatus = await connectedDevice.isConnected();
-      if (!connectionStatus) {
-        setIsConnected(false);
-      }
+      // if (!connectionStatus) {
+      //   setIsConnected(false);
+      // }
     }
   }
 
+  const [rssi, setRssi] = useState<number | null>(null);
+  const rssiInterval = useRef<NodeJS.Timeout | null>(null);
+
+  // Call this after connectDevice succeeds
+  const startRSSIPolling = (deviceId: string) => {
+    rssiInterval.current = setInterval(async () => {
+      try {
+        const device = await BLTManager.readRSSIForDevice(deviceId);
+        setRssi(device.rssi);
+        console.log("RSSI:", device.rssi);
+      } catch (e) {
+        console.warn("RSSI read failed:", e);
+      }
+    }, 1000); // every second
+  };
+
+  const stopRSSIPolling = () => {
+    if (rssiInterval.current) {
+      clearInterval(rssiInterval.current);
+      rssiInterval.current = null;
+    }
+  };
+
   //Function to send data to ESP32
   async function sendTreatment(value: string) {
-    if (connectedDevice == null) {
+    if (connectedDeviceRef.current == null) {
       setSessionDetails((sessionDetails) => ({
         ...sessionDetails,
         applied: "error" as ApplicationType,
@@ -915,7 +961,7 @@ export default function Index() {
     }
     // writes to microcontroller, it gets a characteristic in return from which it prints the value
     BLTManager.writeCharacteristicWithResponseForDevice(
-      connectedDevice?.id,
+      connectedDeviceRef.current.id,
       SERVICE_UUID,
       TREATMENT_UUID,
       base64.encode(value),
@@ -934,8 +980,9 @@ export default function Index() {
     device
       .connect()
       .then((device) => {
-        setConnectedDevice(device);
-        setIsConnected(true);
+        updateConnectedDevice(device);
+        updateIsConnected(true);
+
         setAlerts((prevAlerts) => {
           const newAlerts = new Set(prevAlerts);
           newAlerts.delete("connectionError");
@@ -947,8 +994,10 @@ export default function Index() {
         //  Set what to do when DC is detected
         BLTManager.onDeviceDisconnected(device.id, (error, device) => {
           console.log("Device DC");
-          setIsConnected(false);
-          setConnectedDevice(undefined);
+          updateIsConnected(false);
+          updateConnectedDevice(undefined);
+          stopRSSIPolling();
+          if (device?.id) startRSSIPolling(device.id);
 
           if (shouldScan.current) {
             console.log("Restarting scan after disconnect...");
@@ -1021,6 +1070,8 @@ export default function Index() {
                 "Treatment update received: ",
                 base64.decode(characteristic?.value),
               );
+              // setConnectedDevice(device);
+              // setIsConnected(true);
             }
           },
           "treatmenttransaction",
@@ -1038,6 +1089,8 @@ export default function Index() {
                 "Treatment status update received: ",
                 base64.decode(characteristic?.value),
               );
+              // setConnectedDevice(device);
+              // setIsConnected(true);
             }
           },
           "treatmentstatustransaction",
@@ -1064,6 +1117,7 @@ export default function Index() {
           image: encodedImage,
         }),
       });
+      // const { data } = await api.post("/verifyImage", { image: encodedImage });
       if (verificationResponse.ok) {
         // Parse the response body as JSON
         const jsonResponse = await verificationResponse.json();
@@ -1950,89 +2004,23 @@ export default function Index() {
               >
                 Checking sticky board
               </Text>
-              {isAnalyzing == "Analysis Completed" ? (
-                <View style={{ gap: 24 }}>
-                  <Text
-                    style={{
-                      paddingVertical: 10,
-                      color: COLOURS.darkGrey,
-                      textAlign: "center",
-                    }}
-                  >
-                    Varroa mites found with detection software:
-                  </Text>
-
-                  <>
-                    <TouchableOpacity
-                      onPress={() => setImageModalVisible(true)}
-                    >
-                      {detectionResultImageURI && (
-                        <Image
-                          source={{
-                            uri: `data:image/jpeg;base64,${detectionResultImageURI}`,
-                          }}
-                          style={{
-                            width: 292,
-                            height: 332,
-                            alignSelf: "center",
-                            borderRadius: 12,
-                            borderColor: "#C5C6CC",
-                            borderWidth: 5,
-                          }}
-                        />
-                      )}
-                    </TouchableOpacity>
-
-                    <Modal
-                      isVisible={imageModalVisible}
-                      onBackdropPress={() => setImageModalVisible(false)}
-                      onBackButtonPress={() => setImageModalVisible(false)}
-                      backdropOpacity={1}
-                      backdropColor="white"
-                    >
-                      <Pressable
-                        style={{
-                          flex: 1,
-                          backgroundColor: "rgba(0,0,0,0.85)",
-                          justifyContent: "center",
-                          alignItems: "center",
-                        }}
-                        onPress={() => setImageModalVisible(false)}
-                      >
-                        {detectionResultImageURI && (
-                          <Image
-                            source={{
-                              uri: `data:image/jpeg;base64,${detectionResultImageURI}`,
-                            }}
-                            style={{
-                              width: "98%",
-                              height: "98%",
-                              borderRadius: 12,
-                            }}
-                            resizeMode="contain"
-                          />
-                        )}
-                      </Pressable>
-                    </Modal>
-                  </>
-                </View>
-              ) : (
-                <View
-                  style={{
-                    justifyContent: "center",
-                    alignItems: "center",
-                    marginTop: 70,
-                    height: "auto",
-                  }}
-                >
-                  <CircularLoader
-                    duration={10000}
-                    isLoading={isAnalyzing != "Analysis Completed"}
-                    version="detection"
-                    error={isAnalyzing == "Analysis Failed"}
-                  />
-                </View>
-              )}
+              <View
+                style={{
+                  justifyContent: "center",
+                  alignItems: "center",
+                  height: "auto",
+                }}
+              >
+                <CircularLoader
+                  duration={20000}
+                  isLoading={isAnalyzing != "Analysis Completed"}
+                  version="detection"
+                  error={isAnalyzing == "Analysis Failed"}
+                  setImageModalVisible={setImageModalVisible}
+                  detectionResultImageURI={detectionResultImageURI}
+                  imageModalVisible={imageModalVisible}
+                />
+              </View>
             </View>
 
             <View
@@ -2562,12 +2550,21 @@ export default function Index() {
         body: JSON.stringify({
           temperature: temperature == "" ? "20" : temperature,
           image: encodedImage.replace(/^data:[^;]+;base64,/, ""),
-          overrideTreatment: Math.random() < 0.5 ? "formic acid" : "thymol", // type in any treatment name string here, or leave it none
+          overrideTreatment: treatmentToRecommend,
           numDays: numDays.toString(),
           broodless: broodless,
           supersOn: supersOn,
         }),
       });
+      // const { data } = await api.post("/detectAndTreat", {
+      //   temperature: temperature == "" ? "20" : temperature,
+      //   image: encodedImage.replace(/^data:[^;]+;base64,/, ""),
+      //   overrideTreatment: Math.random() < 0.5 ? "formic acid" : "thymol", // type in any treatment name string here, or leave it none
+      //   numDays: numDays.toString(),
+      //   broodless: broodless,
+      //   supersOn: supersOn,
+      // });
+      console.log("response received");
       if (response.ok) {
         const {
           mite_count,
@@ -2624,33 +2621,25 @@ export default function Index() {
 
         if (!infestation) {
           setlastNotInfested(0);
-          await schedulePushNotification(
-            "Check Mites Levels",
-            "It’s time for your monthly sticky board check to monitor hive health.",
-            ONE_MONTH,
-          );
+          // await schedulePushNotification(
+          //   "Check Mites Levels",
+          //   "It’s time for your monthly sticky board check to monitor hive health.",
+          //   ONE_MONTH,
+          // );
         } else if (delay && temp_range.length > 0) {
           // set a temperature tracker that expires in 30 days
           const expiryDate = new Date();
           expiryDate.setSeconds(expiryDate.getSeconds() + ONE_MONTH);
-          delayTreatmentStorage.set(
-            treatment_recommendation,
-            JSON.stringify({
-              expiry: expiryDate.toISOString(),
-              minTemp: temp_range[0],
-              maxTemp: temp_range[1],
-            }),
-          );
+          // delayTreatmentStorage.set(
+          //   treatment_recommendation,
+          //   JSON.stringify({
+          //     expiry: expiryDate.toISOString(),
+          //     minTemp: temp_range[0],
+          //     maxTemp: temp_range[1],
+          //   }),
+          // );
         }
       } else {
-        // Handle error response
-        console.error("Error:", response.statusText);
-        setIsAnalyzing("Analysis Failed");
-
-        setSessionDetails((sessionDetails) => ({
-          ...sessionDetails,
-          miteCheckStatus: "error" as MiteCheckStatusType,
-        }));
       }
     } catch (error) {
       if (error instanceof Error) {

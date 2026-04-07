@@ -106,3 +106,5 @@ core/__pycache__/
 *.sqlite3
 
 google-services.json
+key.pem
+cert.pem

@@ -1,6 +1,10 @@
+import traceback
+
 from dotenv import load_dotenv
-from fastapi import Body, FastAPI
+from fastapi import Body, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from image_processing import VarroaDetector
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
@@ -58,6 +62,19 @@ class VerifyRequestBody(BaseModel):
     image: str
 
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    tb = traceback.format_exc()
+    print("UNHANDLED EXCEPTION:", tb)
+    return JSONResponse(status_code=500, content={"error": str(exc), "traceback": tb})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    print("VALIDATION ERROR:", exc.errors())
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+
 @app.get("/")
 def read_root():
     return {"Hello": "World"}
@@ -67,6 +84,7 @@ def read_root():
 async def detectAndTreat(
     query: RequestBody = Body(...),
 ):
+    print("hits backend for detection")
     return varroa_detector.select_folder(
         query.broodless,
         query.supersOn,
@@ -81,4 +99,5 @@ async def detectAndTreat(
 async def verifyImage(
     query: VerifyRequestBody = Body(...),
 ):
+    print("hits backend for verification")
     return varroa_detector.verify_image(query.image)
