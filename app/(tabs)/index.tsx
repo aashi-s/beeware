@@ -2794,6 +2794,7 @@ export default function Index() {
           text="Check Infestation Status"
           onPressFunction={() => setUploadModalVisible(true)}
           disabled={isOffSeason}
+          unread={nextCheck < 0}
         />
         <ActionButton
           text="Treatment Recommendation"
