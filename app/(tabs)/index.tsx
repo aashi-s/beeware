@@ -81,7 +81,8 @@ type AlertType =
   | "recommendationExpired"
   | "treatmentNotApplied"
   | "imageNotClear"
-  | "nextRoundReady";
+  | "nextRoundReady"
+  | "reservoirEmpty";
 type TreatmentStatusType =
   | "Fpump activated"
   | "Fpump turned off"
@@ -97,7 +98,7 @@ type TreatmentStatusType =
 type MiteCheckStatusType = "not started" | "pending" | "success" | "error";
 type TreatmentType = "Oxalic Acid" | "Thymol" | "Formic Acid";
 // CONSTANTS
-const BACKEND_URL = "https://careers-mega-lucky-karma.trycloudflare.com";
+const BACKEND_URL = "https://faq-suited-rogers-counseling.trycloudflare.com";
 const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const TEMPERATURE_UUID = "6d68efe5-04b6-4a85-abc4-c2670b7bf7fd";
 const TREATMENT_UUID = "f27b53ad-c63d-49a0-8c0f-9f297e6cc520";
@@ -251,6 +252,7 @@ export default function Index() {
     /**for loading**/
   }
   const [isAnalyzing, setIsAnalyzing] = useState("Start Analysis"); //Is the analysis process ongoing?
+  const [isTreatmentApplying, setIsTreatmentApplying] = useState(false);
 
   {
     /****/
@@ -513,6 +515,7 @@ export default function Index() {
     }));
 
     setTreatment("success");
+    setIsTreatmentApplying(false);
     setTreatmentApplied(chemicalName);
     const today = new Date();
     const d = new Date(today);
@@ -647,6 +650,7 @@ export default function Index() {
       );
     }
     const lastSessionData = userStorage.getString("latestSession");
+    console.log("storage size", userStorage.size);
 
     const parsed = lastSessionData ? JSON.parse(lastSessionData) : {};
     setLatestMiteCount(parsed.miteCount);
@@ -656,6 +660,7 @@ export default function Index() {
     if (parsed.miteCheckStatus == ("pending" as MiteCheckStatusType)) {
       setAlerts((prevAlerts) => {
         const newAlerts = new Set(prevAlerts);
+        newAlerts.delete("checkComplete");
         newAlerts.add("checkIncomplete");
         return newAlerts;
       });
@@ -687,6 +692,7 @@ export default function Index() {
           setAlerts((prevAlerts) => {
             const newAlerts = new Set(prevAlerts);
             newAlerts.add("infestationDetected");
+            newAlerts.delete("checkIncomplete");
             return newAlerts;
           });
         }
@@ -956,6 +962,7 @@ export default function Index() {
           : "",
       );
       setTreatment("error");
+      setIsTreatmentApplying(false);
 
       return;
     }
@@ -971,6 +978,7 @@ export default function Index() {
           "Treatment written to microcontroller: ",
           base64.decode(characteristic.value),
         );
+      setIsTreatmentApplying(true);
     });
   }
   //Connect the device and start monitoring characteristics
@@ -1176,6 +1184,7 @@ export default function Index() {
     } else {
       setAlerts((prevAlerts) => {
         const newAlerts = new Set(prevAlerts);
+        newAlerts.delete("checkComplete");
         newAlerts.add("checkIncomplete");
         return newAlerts;
       });
@@ -2341,6 +2350,19 @@ export default function Index() {
           </View>
         );
       default: // if there is a treatment
+        // if (isTreatmentApplying)
+        //   return (
+        //     <View style={{ height: "auto" }}>
+        //       <CircularLoader
+        //         duration={treatment == "formic acid" ? 1875 : 5000}
+        //         isLoading={isTreatmentApplying}
+        //         version="treatment"
+        //         error={treatment == "error"}
+        //         setImageModalVisible={setImageModalVisible}
+        //         imageModalVisible={imageModalVisible}
+        //       />
+        //     </View>
+        //   );
         // treatment approval screen
         return (
           <View style={{ gap: 24 }}>
@@ -2371,10 +2393,21 @@ export default function Index() {
                 height: "85%",
               }}
             >
-              {nextCheck <= 0 && (
+              {nextCheck <= 0 ? (
                 <AlertBanner alertType="recommendationExpired" />
+              ) : reservoirQuantity[
+                  treatment.replace(
+                    /\w\S*/g,
+                    (text) =>
+                      text.charAt(0).toUpperCase() +
+                      text.substring(1).toLowerCase(),
+                  ) as TreatmentType
+                ] < 60 ? (
+                <AlertBanner alertType="reservoirEmpty" />
+              ) : (
+                <></>
               )}
-              <Text>
+              <Text style={{ marginBottom: 5 }}>
                 {`This treatment is recommended based on your mite check from ${lastCheckDate.toLocaleDateString(
                   "en-US",
                   {
@@ -2424,7 +2457,17 @@ export default function Index() {
                 <ConfirmCheckbox
                   approvedTreatment={approvedTreatment}
                   setApprovedTreatment={setApprovedTreatment}
-                  disabled={nextCheck <= 0}
+                  disabled={
+                    nextCheck <= 0 ||
+                    reservoirQuantity[
+                      treatment.replace(
+                        /\w\S*/g,
+                        (text) =>
+                          text.charAt(0).toUpperCase() +
+                          text.substring(1).toLowerCase(),
+                      ) as TreatmentType
+                    ] < 60
+                  }
                   foamPads={treatment.toLocaleLowerCase() != "oxalic acid"}
                 />
                 <TouchableOpacity
@@ -2434,7 +2477,16 @@ export default function Index() {
                       width: "100%",
                       alignItems: "center",
                       backgroundColor:
-                        nextCheck <= 0 || !approvedTreatment
+                        nextCheck <= 0 ||
+                        !approvedTreatment ||
+                        reservoirQuantity[
+                          treatment.replace(
+                            /\w\S*/g,
+                            (text) =>
+                              text.charAt(0).toUpperCase() +
+                              text.substring(1).toLowerCase(),
+                          ) as TreatmentType
+                        ] < 60
                           ? "#e0e0e0"
                           : COLOURS.colour3,
                     },
@@ -2442,7 +2494,18 @@ export default function Index() {
                   onPress={() => {
                     sendTreatment(treatment);
                   }}
-                  disabled={nextCheck <= 0 || !approvedTreatment}
+                  disabled={
+                    nextCheck <= 0 ||
+                    !approvedTreatment ||
+                    reservoirQuantity[
+                      treatment.replace(
+                        /\w\S*/g,
+                        (text) =>
+                          text.charAt(0).toUpperCase() +
+                          text.substring(1).toLowerCase(),
+                      ) as TreatmentType
+                    ] < 60
+                  }
                 >
                   <Text
                     style={[
@@ -2450,7 +2513,18 @@ export default function Index() {
                       styles.buttonText,
                       {
                         backgroundColor: "transparent",
-                        color: nextCheck <= 0 ? "#8b8b8b" : "#FFF",
+                        color:
+                          nextCheck <= 0 ||
+                          reservoirQuantity[
+                            treatment.replace(
+                              /\w\S*/g,
+                              (text) =>
+                                text.charAt(0).toUpperCase() +
+                                text.substring(1).toLowerCase(),
+                            ) as TreatmentType
+                          ] < 60
+                            ? "#8b8b8b"
+                            : "#FFF",
                       },
                     ]}
                   >
@@ -2609,6 +2683,7 @@ export default function Index() {
         setNumDays(1);
         setBroodless("no");
         setSupersOn("no");
+        console.log(userStorage.size);
         userStorage.set(
           new Date().toISOString(),
           JSON.stringify({

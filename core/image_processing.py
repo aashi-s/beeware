@@ -377,14 +377,14 @@ class VarroaDetector:
                     "reason": "Please retry with a less blurry image.",
                 }
 
-            noise = cv2.meanStdDev(gray)[1][0][0]
-            if noise > 80:
-                print("error: grainy")
-                return {
-                    "verified": False,
-                    "reason": "Please retry with brighter lighting.",
-                }
-            print("noise", noise)
+            # noise = cv2.meanStdDev(gray)[1][0][0]
+            # if noise > 80:
+            #     print("error: grainy")
+            #     return {
+            #         "verified": False,
+            #         "reason": "Please retry with brighter lighting.",
+            #     }
+            # print("noise", noise)
 
             # edges = cv2.Canny(gray, 50, 150)
             # if np.sum(edges > 0) / (h * w) < 0.01:

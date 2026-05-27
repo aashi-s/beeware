@@ -16,7 +16,8 @@ type AlertType =
   | "recommendationExpired"
   | "treatmentNotApplied"
   | "imageNotClear"
-  | "nextRoundReady";
+  | "nextRoundReady"
+  | "reservoirEmpty";
 const AlertBanner = ({
   alertType,
   closeAlert,
@@ -104,6 +105,11 @@ const AlertBanner = ({
       level = "error";
       title = "Image is Not Clear";
       text = `We couldn’t analyze your image. ${prompt}`;
+      break;
+    case "reservoirEmpty":
+      level = "error";
+      title = "Reservoir Empty";
+      text = `Your reservoir for this treatment is empty, please refill it to proceed.`;
       break;
 
     case "recommendationAvailable":

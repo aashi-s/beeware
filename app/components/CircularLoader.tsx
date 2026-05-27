@@ -143,7 +143,7 @@ const CircularLoader: React.FC<CircularLoaderProps> = ({
         </View>
       )}
       {/* loading text */}
-      {completed && !error ? (
+      {version == "detection" && completed && !error ? (
         <View style={{ alignItems: "center" }}>
           {!showResults && (
             <Text style={styles.text}>Sticky board analysis complete.</Text>

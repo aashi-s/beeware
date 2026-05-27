@@ -21,46 +21,46 @@ type History = {
 function History() {
   const [history, setHistory] = useState<History[]>([
     {
-      month: "February 2026",
+      month: "March 2026",
       days: [
         {
-          day: "February 1, 2026",
+          day: "March 1, 2026",
           items: [
             {
               title: "Mite Check Completed",
               body: "Infestation Detected",
-              time: "7:00 PM",
+              time: "7:00 AM",
             },
             {
               title: "Treatment Application Failed",
               body: "Oxalic Acid",
-              time: "7:00 PM",
+              time: "7:05 AM",
             },
           ],
         },
 
         {
-          day: "February 18, 2026",
+          day: "March 8, 2026",
           items: [
             {
               title: "Reservoir Refilled",
               body: "Oxalic Acid",
-              time: "7:00 PM",
+              time: "7:00 AM",
             },
             {
               title: "Treatment Applied Successfully",
               body: "Oxalic Acid",
-              time: "7:00 PM",
+              time: "7:03 AM",
             },
           ],
         },
       ],
     },
     {
-      month: "January 2026",
+      month: "February 2026",
       days: [
         {
-          day: "January 1, 2026",
+          day: "February 1, 2026",
           items: [
             {
               title: "Reservoir Refilled",
@@ -70,7 +70,7 @@ function History() {
           ],
         },
         {
-          day: "January 18, 2026",
+          day: "February 18, 2026",
           items: [
             {
               title: "Mite Check Completed",
@@ -164,15 +164,15 @@ function History() {
     setHistory([
       ...newHistory,
       {
-        month: "February 2026",
+        month: "March 2026",
         days: [
           {
-            day: "February 18, 2026",
+            day: "March 8, 2026",
             items: [
               {
                 title: "Treatment Applied Successfully",
                 body: "Oxalic Acid",
-                time: "10:29 PM",
+                time: "10:29 AM",
               },
               {
                 title: "Reservoir Refilled",
@@ -182,7 +182,7 @@ function History() {
             ],
           },
           {
-            day: "February 13, 2026",
+            day: "March 3, 2026",
             items: [
               {
                 title: "Treatment Application Failed",
@@ -192,7 +192,7 @@ function History() {
               {
                 title: "Mite Check Completed",
                 body: "Infestation Detected",
-                time: "11:59 PM",
+                time: "11:59 AM",
               },
             ],
           },
